@@ -15,7 +15,7 @@ except ImportError:
 
 CACHE_DIR = "data/cache"
 
-def download_data(config: Dict, use_cache: bool = True) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def download_data(config: Dict, use_cache: bool = True) -> Tuple[pd.DataFrame, pd.DataFrame, Dict]:
     """Downloads Price (YF) and Macro (FRED) data with caching."""
     
     # Setup Cache
@@ -38,7 +38,18 @@ def download_data(config: Dict, use_cache: bool = True) -> Tuple[pd.DataFrame, p
         print("   Loading data from local cache...")
         prices = pd.read_pickle(prices_file)
         macro = pd.read_pickle(macro_file)
-        return prices, macro
+        
+        # Still fetch fundamentals (Snapshot)
+        fundamentals = {}
+        try:
+            spy_ticker = yf.Ticker("SPY")
+            info = spy_ticker.info
+            fundamentals["SPY_PE"] = info.get("trailingPE", None)
+            print(f"   SPY Trailing PE: {fundamentals['SPY_PE']} (Live)")
+        except Exception:
+            pass
+            
+        return prices, macro, fundamentals
     
     # --- 1. Fetching Asset Prices (Yahoo Finance) ---
     print("1. Fetching Asset Prices (Yahoo Finance)...")
@@ -93,10 +104,22 @@ def download_data(config: Dict, use_cache: bool = True) -> Tuple[pd.DataFrame, p
     prices = prices.ffill()
     macro = macro.ffill().reindex(prices.index).ffill()
     
+    # --- 4. Fetch Fundamentals (Snapshot) ---
+    print("4. Fetching Fundamentals (Snapshot)...")
+    fundamentals = {}
+    try:
+        spy_ticker = yf.Ticker("SPY")
+        info = spy_ticker.info
+        fundamentals["SPY_PE"] = info.get("trailingPE", None)
+        print(f"   SPY Trailing PE: {fundamentals['SPY_PE']}")
+    except Exception as e:
+        print(f"   Fundamentals Error: {e}")
+    
     # Save to Cache
     if use_cache:
         print(f"   Saving data to cache ({CACHE_DIR})...")
         prices.to_pickle(prices_file)
         macro.to_pickle(macro_file)
+        # Note: We are not caching fundamentals to keep them fresh
     
-    return prices, macro
+    return prices, macro, fundamentals

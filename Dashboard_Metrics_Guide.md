@@ -162,3 +162,108 @@ This page acts as a "Quant Advisor," simulating thousands of possible portfolios
 - **Optimal Portfolios**:
   - **Max Sharpe (Star)**: The "Goldilocks" portfolio. The best risk-adjusted return. Best for long-term growth.
   - **Min Volatility (Circle)**: The "safe haven". The portfolio with the absolute lowest calculated risk. Best for preservation.
+
+### Page 11: Predictive Analytics Model (NY Fed)
+This page focuses on forward-looking recession risks and leading economic indicators.
+- **NY Fed Recession Probability**: The probability of a US recession in the next 12 months based on the Treasury Yield Curve.
+  - **> 30%**: High Risk. Proceed with caution.
+- **Leading Economic Indicators (LEI)**: Tracks the trend of key data points like Housing Starts, Manufacturing, and Consumer Sentiment.
+
+---
+
+## Page 12: Monte Carlo Simulation (Cone of Uncertainty)
+- **What it is**: A stochastic simulation (1000 runs) of future price paths for SPY.
+- **The "Cone"**:
+  - **Dark Blue Line**: Median expected path.
+  - **Shaded Areas**: Confidence intervals (50% and 95%).
+## Page 2: Macro Regime Radar (State of the World)
+**Goal:** Assess the current global macro environment at a glance.
+- **Business Cycle**: Where are we? (Expansion, Slowdown, Recession, Recovery).
+- **Inflation Regime**: Disinflation vs Reflation.
+- **Policy**: Tight (Restrictive) vs Loose (Accommodative).
+
+## Page 3: Predictive Analytics
+**Goal:** Forward-looking risk assessment.
+- **Recession Probability**: Derived from Yield Curve (10Y-3M).
+- **Market Internals**: Cyclical vs Defensive rotation.
+
+## Page 4: Inflation Expectations (The Anchor)
+**Goal:** Track market-implied inflation expectations.
+- **5Y Breakeven**: Medium-term market view.
+- **5Y5Y Forward**: Long-term anchor. If this de-anchors > 2.5%, Fed must be aggressive.
+
+## Page 5: Monetary Plumbing
+**Goal:** Monitor the "pipes" of the financial system.
+- **Net Liquidity**: Fed Balance Sheet - TGA - RRP.
+- **SOFR Spread**: Stress in overnight lending markets.
+
+## Page 6: Valuation & Real Rates
+**Goal:** Assess the cost of capital and equity valuation.
+- **Real Yield (10Y - Inflation)**: The true cost of money. >2% is restrictive.
+- **ERP (Equity Risk Premium)**: Earnings Yield - 10Y Yield. Low ERP = Stocks are expensive relative to bonds.
+
+## Page 7: Macro Risk Dashboard
+**Goal:** High-level dashboard of systemic stress.
+- **Credit Spreads (HYG/IEF)**: Is credit stress rising?
+- **MOVE Index**: Bond market volatility (the "Vol of Vol").
+
+## Page 8: Cross-Asset Correlation
+**Goal:** Understand how asset classes are moving together.
+- **Stock/Bond Correlation**:
+  - Positive: Inflation fears dominate (Bad for 60/40 portfolios).
+  - Negative: Growth fears dominate (Bonds hedge Stocks).
+
+## Page 9: Forward Looking Models
+**Goal:** Leading indicators for sector rotation.
+- **Sector Rotation Model**: Which sectors benefit from the current regime? (e.g., Energy in Inflation, Tech in Growth).
+
+## Page 10: Institutional Alpha Factors
+**Goal:** Track what drives smart money flows.
+- **VIX Term Structure**: Contango (Normal) vs Backwardation (Crash Risk).
+- **SKEW Index**: Demand for tail-risk hedging. High SKEW = Nervousness.
+
+## Page 11: Quant Lab Dashboard
+**Goal:** Micro-structure and options analytics for SPY.
+- **Gamma Exposure (GEX)**: Dealer hedging flows. Be careful at "Flip Points".
+- **Vol Control**: Systematic fund leverage targets.
+
+## Page 12: Monte Carlo Simulation (Cone)
+**Goal:** Project future price paths based on volatility.
+- **Cone Analysis**: Are we near the top (extended) or bottom (oversold) of the probable range?
+
+## Page 13: Stochastic Models
+**Goal:** Advanced volatility modeling.
+- **Heston Volatility**: Is volatility itself trending up?
+- **Regime Switching (HMM)**: Are we in a "Calm" or "Turbulent" state?
+
+## Page 14: Mean Reversion
+**Goal:** Identify overstretched moves.
+- **Z-Scores**: Statistical distance from the mean. >2 Sigma = Reversion likely.
+
+## Page 15: Market Microstructure
+**Goal:** Assess liquidity and crash risk.
+- **Merton Jumps**: Probability of sudden "gap" moves.
+- **Hawkes Process**: Volatility clustering and feedback loops.
+
+## Page 16: Anti-Fragility
+**Goal:** Stress-test the portfolio structure.
+- **Kurtosis**: Fat tail risk.
+- **Taleb Ratio**: Upside volatility vs Downside volatility.
+
+---
+
+## Page 17: Scenario Analysis (Stress Testing)
+- **What If?**: Simulates how the portfolio would perform in historical crises.
+- **Scenarios**:
+  - **2008 GFC**: Global Financial Crisis.
+  - **2020 Covid**: Pandemic crash.
+  - **2022 Inflation**: Rate hike cycle.
+- **Goal**: Ensure the portfolio survives the "Worst Case" (Max Drawdown matches or beats the benchmark).
+
+---
+
+## Page 18: Portfolio Optimization (Efficient Frontier)
+**Goal:** Portfolio Construction and Optimization.
+- **Efficient Frontier Curve**: Shows the best possible return for a given level of risk.
+- **Max Sharpe (Star)**: The "Goldilocks" portfolio. The best risk-adjusted return. Best for long-term growth.
+- **Min Volatility (Circle)**: The "safe haven". The portfolio with the absolute lowest calculated risk. Best for preservation.

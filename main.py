@@ -17,7 +17,8 @@ from plotting.charts import (
     plot_monetary_plumbing, plot_forward_models, plot_quant_lab_dashboard, 
     plot_alpha_factors_page, plot_cross_asset_page, plot_efficient_frontier_page,
     plot_predictive_models_page, plot_monte_carlo_cone, plot_stochastic_page,
-    plot_mean_reversion_page, plot_microstructure_page, plot_antifragility_page
+    plot_mean_reversion_page, plot_microstructure_page, plot_antifragility_page,
+    plot_scenario_page, plot_valuation_page, plot_inflation_swap_curve
 )
 from plotting.report import generate_pdf_report
 
@@ -25,7 +26,7 @@ def main():
     print("--- Initializing SUPER MACRO DASHBOARD (Modular) ---")
     
     # 1. Data Ingestion
-    prices, macro = download_data(CONFIG, use_cache=True)
+    prices, macro, fundamentals = download_data(CONFIG, use_cache=True)
     
     # 2. Analytics Pipeline
     print("Running Analytics Pipeline...")
@@ -128,6 +129,19 @@ def main():
     fig_anti = plot_antifragility_page(prices, ticker="SPY")
     figures["antifragility"] = fig_anti
     
+    # Scenario Analysis (Phase 14)
+    # Scenario Analysis (Phase 14)
+    fig_scen = plot_scenario_page(prices, ticker="SPY")
+    figures["scenarios"] = fig_scen
+    
+    # Valuation & Real Rates (New)
+    fig_val = plot_valuation_page(df, fundamentals)
+    figures["valuation"] = fig_val
+
+    # Inflation Swaps (New)
+    fig_inf = plot_inflation_swap_curve(df)
+    figures["inflation_swaps"] = fig_inf
+
     # 4. Reporting
     generate_pdf_report(df, prices, figures, alpha_data, cta_data, opt_data, pred_data)
     

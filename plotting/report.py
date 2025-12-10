@@ -99,9 +99,91 @@ def generate_narrative_summary(df: pd.DataFrame, alpha_data: Dict) -> str:
         
     return f"{weather} {liq_text} {threat_text}\n\n   >> {punchline}"
 
+def generate_quant_synthesis(df: pd.DataFrame, prices: pd.DataFrame, alpha_data: Dict) -> str:
+    """Generates the Executive Quant Synthesis (The 'Know What To Do' Paragraph)."""
+    if prices is None or "SPY" not in prices.columns: return ""
+    
+    spy = prices["SPY"].dropna()
+    rets = spy.pct_change().dropna()
+    curr_price = spy.iloc[-1]
+    
+    # 1. On-the-fly Metrics
+    # (A) Regime
+    score = df["MACRO_SCORE"].iloc[-1]
+    regime = "RISK-ON" if score > 0 else "RISK-OFF"
+    
+    # (B) Volatility of Volatility (Tail Risk)
+    from analytics.quant import calculate_antifragility_metrics
+    af_metrics = calculate_antifragility_metrics(rets)
+    turkey_score = af_metrics.get("turkey_score", 0)
+    skew = af_metrics.get("skew", 0)
+    
+    # (C) Probabilities (Gaussian Approx for speed in text, consistent with MC)
+    vol = rets.std() * np.sqrt(252)
+    # Prob of +5% in 1 month (21 days)
+    from scipy.stats import norm
+    t = 21/252
+    sigma_t = vol * np.sqrt(t)
+    
+    # Upside +5%
+    d2_up = (np.log(1.05)) / sigma_t
+    prob_up = 1 - norm.cdf(d2_up) # Approx
+    
+    # Downside -5%
+    d2_down = (np.log(0.95)) / sigma_t
+    prob_down = norm.cdf(d2_down)
+    
+    # 2. Construct Actionable Advice
+    advice = []
+    
+    # Layer 1: Directional Bias (Regime + Momentum)
+    if regime == "RISK-ON":
+        if prob_up > prob_down:
+            advice.append("PRIMARY BIAS: ACCUMULATE RISK. Macro score and probability skew favor upside.")
+        else:
+            advice.append("PRIMARY BIAS: CAUTIOUS BULL. Macro is positive but volatility pricing suggests resistance.")
+    else:
+        if turkey_score < -1:
+            advice.append("PRIMARY BIAS: DEFENSIVE HEDGING. High fragility and weak macro score.")
+        else:
+            advice.append("PRIMARY BIAS: REDUCE EXPOSURE. Macro headwinds dominate.")
+            
+    # Layer 2: Volatility / Contingency
+    if turkey_score < -2.0:
+        advice.append("CRITICAL: HIDDEN TAIL RISK. Buy OTM Puts (90-120 DTE). Spend ~2% of AUM/yr. Goal: Partial Hedge (Not Delta Neutral).")
+    elif skew < -1.0:
+        advice.append("EXECUTION: SKEW EXTREME. Puts are expensive. Use Risk Reversals (Sell 30d Puts / Buy 30d Calls) to finance delta.")
+    elif skew > 0.5:
+        advice.append("EXECUTION: CALLS ARE EXPENSIVE. Take profits or write covered calls.")
+     
+    # Layer 3: Liquidity
+    liq_status = alpha_data.get('net_liquidity', {}).get('status', 'NEUTRAL')
+    if "EXPANDING" in liq_status:
+        advice.append("TAILWIND: Liquidity is expanding. Buy dips in High Beta sectors.")
+    elif "CONTRACTING" in liq_status:
+        advice.append("HEADWIND: Liquidity is drying up. Tighten stop-losses.")
+
+    advice_text = "\n".join([f"   > {a}" for a in advice])
+    
+    text = (
+        f"********************************************************************************\n"
+        f" EXECUTIVE QUANT SYNTHESIS (THE 'GAME PLAN')\n"
+        f"********************************************************************************\n"
+        f" CONTEXT:  {regime} Regime | Vol: {vol:.1%} | Fragility Score: {turkey_score:.2f}\n"
+        f" PROBS (1M): Odds of +5% Rally: {prob_up:.0%}  vs  Odds of -5% Drop: {prob_down:.0%}\n\n"
+        f" ACTIONABLE PLAYBOOK:\n"
+        f"{advice_text}\n\n"
+        f" SENTIMENT: {'EUPHORIC' if prob_up > 0.4 else 'FEARFUL' if prob_down > 0.4 else 'NEUTRAL'}\n"
+        f"********************************************************************************\n"
+    )
+    return text
+
 def generate_capital_flows_commentary(df: pd.DataFrame, prices: pd.DataFrame = None, alpha_data: Dict = {}, cta_data: pd.DataFrame = None, opt_data: Dict = None, pred_data: Dict = None):
     """Analyzes the results and returns full commentary text."""
     last = df.iloc[-1]
+    
+    # --- EXECUTIVE SYNTHESIS ---
+    synthesis_text = generate_quant_synthesis(df, prices, alpha_data)
     
     # --- STRATEGY SNAPSHOT ---
     strat_text = ""
@@ -151,7 +233,13 @@ def generate_capital_flows_commentary(df: pd.DataFrame, prices: pd.DataFrame = N
         cons_commentary = "The Consumer is RESILIENT. Outperformance in Discretionary stocks suggests the economy is avoiding immediate recession."
 
     # 4. Plumbing
-    plumbing_status = "STRESSED" if last["CF_NFCI"] > 0 else "FUNCTIONAL"
+    plumbing_status = "FUNCTIONAL"
+    if "SOFR" in df.columns and "Fed_Funds" in df.columns and last["SOFR"] > last["Fed_Funds"] + 0.05:
+         plumbing_status = "CRITICAL (Repo Stress - SOFR Spike)"
+    elif last["CF_NFCI"] > 0:
+         plumbing_status = "STRESSED (Tight Financial Conditions)"
+    else:
+         plumbing_status = "FUNCTIONAL (Liquid)"
     
     # 5. Score
     score = last["MACRO_SCORE"]
@@ -422,7 +510,9 @@ def generate_capital_flows_commentary(df: pd.DataFrame, prices: pd.DataFrame = N
     full_text = (
         f"SUPER MACRO DASHBOARD: EXECUTIVE SUMMARY ({date_str})\n"
         f"{'='*80}\n"
-        f"THE VIEW (Synthesized): {generate_narrative_summary(df, alpha_data)}\n"
+        f"{synthesis_text}\n"
+        f"{'='*80}\n"
+        f"THE VIEW (Legacy): {generate_narrative_summary(df, alpha_data)}\n"
         f"{'='*80}\n"
         f"MACRO REGIME SCORE: {score:.2f} -> {score_status}\n"
         f"LIQUIDITY VALVE: {btc_trend} (Real Yield: {real_yield:.2f}%)\n"
@@ -535,67 +625,75 @@ def generate_pdf_report(df: pd.DataFrame, prices: pd.DataFrame, figures: Dict[st
             else:
                 # Add Title on First Page
                 plt.text(0.5, 0.96, "MACRO ROTATIONS & LIQUIDITY DASHBOARD", transform=fig_text.transFigure, ha='center', fontsize=14, weight='bold')
-                
+            
             fig_text.text(0.05, 0.92, page_text, transform=fig_text.transFigure, size=9, ha="left", va="top", family="monospace")
             plt.axis('off')
             pdf.savefig(fig_text)
             plt.close(fig_text)
         
-        # Page 2: Backtest
-        if "backtest" in figures:
-            pdf.savefig(figures["backtest"])
-            plt.close(figures["backtest"])
-            
-        # Page 3: Risk & Sector
-        if "risk_macro" in figures:
-            pdf.savefig(figures["risk_macro"])
-            plt.close(figures["risk_macro"])
-            
-        # Page 4: Plumbing
-        if "plumbing" in figures:
-            pdf.savefig(figures["plumbing"])
-            plt.close(figures["plumbing"])
-            
-        # Page 5: Radar
+        # --- SECTION 1: GLOBAL MACRO (The Economy) ---
+        
+        # Page 2: Macro Regime Radar (State of the World)
         if "radar" in figures:
             pdf.savefig(figures["radar"])
             plt.close(figures["radar"])
 
-        # Page 6: Forward Models
+        # Page 3: Predictive Analytics (Recession & Internals)
+        if "predictive" in figures:
+            pdf.savefig(figures["predictive"])
+            plt.close(figures["predictive"])
+
+        # Page 4: Inflation Expectations (The Anchor)
+        if "inflation_swaps" in figures:
+            pdf.savefig(figures["inflation_swaps"])
+            plt.close(figures["inflation_swaps"])
+
+        # Page 5: Monetary Plumbing (Liquidity & Rates)
+        if "plumbing" in figures:
+            pdf.savefig(figures["plumbing"])
+            plt.close(figures["plumbing"])
+
+        # Page 6: Valuation & Real Rates (Cost of Capital)
+        if "valuation" in figures:
+            pdf.savefig(figures["valuation"])
+            plt.close(figures["valuation"])
+
+        # --- SECTION 2: MARKET RISK & STRUCTURE (The Market) ---
+
+        # Page 7: Macro Risk Dashboard (Yields, Spreads)
+        if "risk_macro" in figures:
+            pdf.savefig(figures["risk_macro"])
+            plt.close(figures["risk_macro"])
+
+        # Page 8: Cross-Asset Correlation (Systemic Risk)
+        if "cross_asset" in figures:
+            pdf.savefig(figures["cross_asset"])
+            plt.close(figures["cross_asset"])
+
+        # Page 9: Forward Models (Regime, Rotation)
         if "forward" in figures:
             pdf.savefig(figures["forward"])
             plt.close(figures["forward"])
 
-        # Page 7: Quant Lab
-        if "quant" in figures:
-            pdf.savefig(figures["quant"])
-            plt.close(figures["quant"])
+        # --- SECTION 3: INSTITUTIONAL FLOWS (The Players) ---
 
-        # Page 8: Alpha Factors
+        # Page 10: Alpha Factors (Liquidity, Vol, SKEW)
         if "alpha" in figures:
             pdf.savefig(figures["alpha"])
             plt.close(figures["alpha"])
 
-        # Page 9: Cross-Asset Regime
-        if "cross_asset" in figures:
-            pdf.savefig(figures["cross_asset"])
-            plt.close(figures["cross_asset"])
-            
-        # Page 10: Efficient Frontier
-        if "frontier" in figures:
-            pdf.savefig(figures["frontier"])
-            plt.close(figures["frontier"])
-            
-        # Page 11: Predictive Models
-        if "predictive" in figures:
-            pdf.savefig(figures["predictive"])
-            plt.close(figures["predictive"])
-            
-        # Page 12: Monte Carlo Simulation
+        # --- SECTION 4: MICRO QUANT LAB (The Asset - SPY) ---
+
+        # Page 11: Quant Lab Dashboard
+        if "quant" in figures:
+            pdf.savefig(figures["quant"])
+            plt.close(figures["quant"])
+
+        # Page 12: Monte Carlo Cone
         if "monte_carlo" in figures:
             pdf.savefig(figures["monte_carlo"])
             plt.close(figures["monte_carlo"])
-            
+
         # Page 13: Advanced Stochastic
         if "stochastic" in figures:
             pdf.savefig(figures["stochastic"])
@@ -615,5 +713,22 @@ def generate_pdf_report(df: pd.DataFrame, prices: pd.DataFrame, figures: Dict[st
         if "antifragility" in figures:
             pdf.savefig(figures["antifragility"])
             plt.close(figures["antifragility"])
+
+        # Page 17: Scenario Analysis
+        if "scenarios" in figures:
+            pdf.savefig(figures["scenarios"])
+            plt.close(figures["scenarios"])
+
+        # --- SECTION 5: PORTFOLIO CONSTRUCTION (The Solution) ---
+
+        # Page 18: Efficient Frontier
+        if "frontier" in figures:
+            pdf.savefig(figures["frontier"])
+            plt.close(figures["frontier"])
+            
+        # Backtest (Optional/Appendix)
+        if "backtest" in figures:
+            pdf.savefig(figures["backtest"])
+            plt.close(figures["backtest"])
 
     print("PDF Report Saved Successfully!")

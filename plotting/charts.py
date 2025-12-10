@@ -10,9 +10,10 @@ from scipy.stats import norm
 from typing import Dict, List
 from analytics.rotations import calculate_rrg_metrics, predict_sector_rotation, calculate_seasonality
 from analytics.macro_models import calculate_macro_radar, calculate_regime_gmm
-from analytics.quant import calculate_strategy_performance, calculate_systemic_risk_pca, fit_garch, simulate_gbm, calculate_greeks, black_scholes_merton, calculate_antifragility_metrics
+from analytics.quant import calculate_strategy_performance, calculate_systemic_risk_pca, fit_garch, simulate_gbm, calculate_greeks, black_scholes_merton, calculate_antifragility_metrics, calculate_market_internals
 from analytics.stochastic import simulate_heston, simulate_merton_jump, simulate_hawkes_intensity
 from analytics.econometrics import fit_markov_regime_switching, fit_ou_process
+from analytics.scenarios import calculate_move_probabilities, generate_contingencies
 
 def run_backtest_plot(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
     """Runs a vectorised backtest for multiple strategies and plots the results."""
@@ -197,6 +198,35 @@ def plot_risk_macro_dashboard(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Fig
         ax4.text(-x_abs*0.9, y_abs*0.9, "IMPROVING", color='blue', alpha=0.5, weight='bold', ha='left', va='top')
 
     plt.tight_layout()
+    
+    # --- Interpretation Box (Bottom) ---
+    fig.subplots_adjust(bottom=0.15) # Make room
+    
+    interp_text = "Analysis & Key Signals:\n"
+    
+    # 1. Yield Curve
+    if has_yields and "10Y_Yield" in df.columns:
+        curr_spread = (df["10Y_Yield"].iloc[-1] - df["2Y_Yield"].iloc[-1])
+        if curr_spread < 0:
+            interp_text += f"• Yield Curve (10Y-2Y): INVERTED ({curr_spread:.2f}%). Strong historical recession signal.\n"
+        else:
+            interp_text += f"• Yield Curve (10Y-2Y): NORMAL ({curr_spread:.2f}%). No immediate recession signal from rates.\n"
+            
+    # 2. Credit
+    if "HY_Spread" in df.columns:
+        curr_hy = df["HY_Spread"].dropna().iloc[-1]
+        if curr_hy > 5.0:
+            interp_text += f"• Credit Spreads: STRESSED ({curr_hy:.2f}%). High default risk pricing. Equity-negative.\n"
+        else:
+            interp_text += f"• Credit Spreads: CALM ({curr_hy:.2f}%). Corporate bond market shows no panic.\n"
+            
+    # 3. Bond Vol
+    if "MOVE_Index" in df.columns:
+         curr_move = df["MOVE_Index"].dropna().iloc[-1]
+         if curr_move > 100:
+             interp_text += f"• Bond Vol (MOVE): ELEVATED ({curr_move:.0f}). Treasury market instability poses risk to stocks.\n"
+             
+    fig.text(0.05, 0.02, interp_text, fontsize=10, bbox=dict(facecolor='white', alpha=0.9, edgecolor='black', boxstyle='round'))
     return fig
 
 def plot_macro_radar_chart(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
@@ -246,8 +276,8 @@ def plot_monetary_plumbing(df: pd.DataFrame) -> plt.Figure:
     print("   Generating Monetary Plumbing Page...")
     plt.style.use('default')
     
-    fig = plt.figure(figsize=(14, 14))
-    gs = fig.add_gridspec(4, 1, height_ratios=[1, 1, 1, 1])
+    fig = plt.figure(figsize=(14, 18))
+    gs = fig.add_gridspec(5, 1, height_ratios=[1, 1, 1, 1, 1])
     
     # 1. Liquidity Impulse
     ax1 = fig.add_subplot(gs[0])
@@ -276,51 +306,90 @@ def plot_monetary_plumbing(df: pd.DataFrame) -> plt.Figure:
     else:
         ax1.text(0.5, 0.5, "Liquidity Data Missing", ha='center')
 
-    # 2. DXY
+    # 2. Overnight Rates Monitor (SOFR vs Fed Funds) - NEW
     ax2 = fig.add_subplot(gs[1])
+    if "SOFR" in df.columns and "Fed_Funds" in df.columns:
+        sofr = df["SOFR"].dropna()
+        dff = df["Fed_Funds"].dropna()
+        
+        # Align
+        common_idx = sofr.index.intersection(dff.index)
+        sofr = sofr.loc[common_idx]
+        dff = dff.loc[common_idx]
+        
+        ax2.plot(dff.index, dff, color='black', linestyle=':', label="Fed Funds Effective Rate (Policy)", linewidth=1.5)
+        ax2.plot(sofr.index, sofr, color='blue', label="SOFR (Secured Overnight)", linewidth=1)
+        
+        # Stress Detection (SOFR > DFF + 5bps)
+        spread = sofr - dff
+        stress_dates = spread[spread > 0.05].index
+        
+        # Highlight Stress
+        for date in stress_dates:
+             ax2.axvline(date, color='red', alpha=0.3)
+             
+        curr_sofr = sofr.iloc[-1]
+        curr_dff = dff.iloc[-1]
+        
+        status = "NORMAL"
+        if curr_sofr > curr_dff + 0.05: status = "STRESS (Collateral Shortage)"
+        elif curr_sofr < curr_dff - 0.10: status = "EXCESS LIQUIDITY (RRP Floor)"
+        
+        ax2.set_title(f"2. Overnight Rates Monitor (Plumbing): {curr_sofr:.2f}% vs Fed {curr_dff:.2f}% -> {status}", fontsize=12, weight='bold')
+        ax2.legend(loc="upper left")
+        ax2.grid(True, alpha=0.3)
+        
+        # Interpretation
+        ax2.text(0.02, 0.6, "Normal: SOFR trades tight to Fed Funds.\nSpike > Fed Funds = Collateral Shortage (Repo Crisis Risk).", 
+                 transform=ax2.transAxes, fontsize=9, bbox=dict(facecolor='white', alpha=0.8, edgecolor='grey'))
+    else:
+        ax2.text(0.5, 0.5, "Overnight Rate Data Missing (SOFR/DFF)", ha='center')
+
+    # 3. DXY
+    ax3 = fig.add_subplot(gs[2])
     dxy_col = "DX-Y.NYB" if "DX-Y.NYB" in df.columns else "UUP"
     if dxy_col in df.columns:
         dxy = df[dxy_col].dropna()
         ma = dxy.rolling(200).mean()
-        ax2.plot(dxy.index, dxy, color='green', label="USD Index (DXY)")
-        ax2.plot(ma.index, ma, color='black', linestyle='--')
+        ax3.plot(dxy.index, dxy, color='green', label="USD Index (DXY)")
+        ax3.plot(ma.index, ma, color='black', linestyle='--')
         
         curr = dxy.iloc[-1]
         ma_val = ma.iloc[-1]
         status = "BULLISH" if curr > ma_val else "BEARISH"
         color = 'red' if curr > ma_val else 'green'
-        ax2.set_title(f"2. Global Liquidity Wrecking Ball (DXY): {status}", fontsize=12, weight='bold', color=color)
-        ax2.legend(loc="upper left")
-        ax2.grid(True, alpha=0.3)
-    else:
-        ax2.text(0.5, 0.5, "DXY Data Missing", ha='center')
-
-    # 3. Inflation Trend
-    ax3 = fig.add_subplot(gs[2])
-    if "CPI_YoY" in df.columns:
-        cpi = df["CPI_YoY"].dropna()
-        ax3.plot(cpi.index, cpi, color='purple', label="CPI Inflation (YoY)", linewidth=2)
-        ax3.axhline(0.02, color='red', linestyle='--', label="Fed Target (2%)")
-        ax3.set_title("3. Inflation Trend (CPI)", fontsize=12, weight='bold')
+        ax3.set_title(f"3. Global Liquidity Wrecking Ball (DXY): {status}", fontsize=12, weight='bold', color=color)
         ax3.legend(loc="upper left")
         ax3.grid(True, alpha=0.3)
-        ax3.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
     else:
-        ax3.text(0.5, 0.5, "Inflation Data Missing", ha='center')
-        
-    # 4. Labor Market
+        ax3.text(0.5, 0.5, "DXY Data Missing", ha='center')
+
+    # 4. Inflation Trend
     ax4 = fig.add_subplot(gs[3])
+    if "CPI_YoY" in df.columns:
+        cpi = df["CPI_YoY"].dropna()
+        ax4.plot(cpi.index, cpi, color='purple', label="CPI Inflation (YoY)", linewidth=2)
+        ax4.axhline(0.02, color='red', linestyle='--', label="Fed Target (2%)")
+        ax4.set_title("4. Inflation Trend (CPI)", fontsize=12, weight='bold')
+        ax4.legend(loc="upper left")
+        ax4.grid(True, alpha=0.3)
+        ax4.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
+    else:
+        ax4.text(0.5, 0.5, "Inflation Data Missing", ha='center')
+        
+    # 5. Labor Market
+    ax5 = fig.add_subplot(gs[4])
     if "Unemployment" in df.columns:
         unrate = df["Unemployment"].dropna()
         unrate_ma = unrate.rolling(12).mean()
-        ax4.plot(unrate.index, unrate, color='black', label="Unemployment Rate", linewidth=2)
-        ax4.plot(unrate_ma.index, unrate_ma, color='red', linestyle='--', label="12-Month Moving Avg")
-        ax4.set_title("4. Labor Market Health (Unemployment)", fontsize=12, weight='bold')
-        ax4.legend(loc="upper left")
-        ax4.grid(True, alpha=0.3)
-        ax4.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.1%}'.format(y)))
+        ax5.plot(unrate.index, unrate, color='black', label="Unemployment Rate", linewidth=2)
+        ax5.plot(unrate_ma.index, unrate_ma, color='red', linestyle='--', label="12-Month Moving Avg")
+        ax5.set_title("5. Labor Market Health (Unemployment)", fontsize=12, weight='bold')
+        ax5.legend(loc="upper left")
+        ax5.grid(True, alpha=0.3)
+        ax5.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: '{:.0%}'.format(y)))
     else:
-        ax4.text(0.5, 0.5, "Labor Data Missing", ha='center')
+        ax5.text(0.5, 0.5, "Labor Data Missing", ha='center')
 
     plt.tight_layout()
     return fig
@@ -463,6 +532,31 @@ def plot_forward_models(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
         ax6.text(0.5, 0.5, "Seasonality Data Missing", ha='center')
 
     plt.tight_layout()
+    
+    # --- Interpretation Box (Bottom) ---
+    fig.subplots_adjust(bottom=0.12)
+    
+    interp_text = "Forward Looking Signals:\n"
+    
+    # 1. Recession Prob
+    if "Recession_Prob" in df.columns:
+        curr_prob = df["Recession_Prob"].iloc[-1]
+        if curr_prob > 30:
+            interp_text += f"• Recession Model: WARNING ({curr_prob:.1f}%). Probability exceeds safety threshold.\n"
+        else:
+            interp_text += f"• Recession Model: LOW RISK ({curr_prob:.1f}%). Yield curve does not signal imminent downturn.\n"
+            
+    # 2. Regime
+    interp_text += "• Market Regime: Verify with GMM plot. (State 0 = Bull, State 1 = Volatile/Bear).\n"
+    
+    # 3. Seasonality
+    curr_m = dt.date.today().month
+    import calendar
+    m_name = calendar.month_abbr[curr_m]
+    
+    interp_text += f"• Seasonality ({m_name}): Check bar chart. Historic avg return provides bias.\n"
+
+    fig.text(0.05, 0.02, interp_text, fontsize=10, bbox=dict(facecolor='white', alpha=0.9, edgecolor='black', boxstyle='round'))
     return fig
 
 def plot_quant_lab_dashboard(prices: pd.DataFrame) -> plt.Figure:
@@ -555,6 +649,30 @@ def plot_quant_lab_dashboard(prices: pd.DataFrame) -> plt.Figure:
         ax3.text(0.5, 0.5, "Data Missing", ha='center')
 
     plt.tight_layout()
+    
+    # --- Interpretation Box (Bottom) ---
+    fig.subplots_adjust(bottom=0.15)
+    
+    interp_text = "Quant Lab Insights:\n"
+    
+    # 1. Vol
+    if "SPY" in prices.columns:
+        curr_vol = vol_hist.iloc[-1]
+        interp_text += f"• Volatility Regime (21D Realized): {curr_vol:.1f}%. "
+        if curr_vol < 12: interp_text += "Low Volatility (Complacency/Bull Trend).\n"
+        elif curr_vol > 25: interp_text += "High Volatility (Fear/Crash Risk).\n"
+        else: interp_text += "Normal Volatility.\n"
+        
+    # 2. Monte Carlo
+    if "SPY" in prices.columns:
+        mean_path = paths.mean(axis=0)[-1]
+        chg = (mean_path/S0 - 1) * 100
+        interp_text += f"• Monte Carlo Projection (Mean): {chg:.1f}% expected return over 30 days.\n"
+        
+    # 3. Greeks
+    interp_text += "• Option Greeks: Delta measures directional exposure. Vega measures sensitivity to volatility spikes.\n"
+
+    fig.text(0.05, 0.02, interp_text, fontsize=10, bbox=dict(facecolor='white', alpha=0.9, edgecolor='black', boxstyle='round'))
     return fig
 
 def plot_alpha_factors_page(prices: pd.DataFrame, macro: pd.DataFrame, alpha_data: Dict) -> plt.Figure:
@@ -562,7 +680,7 @@ def plot_alpha_factors_page(prices: pd.DataFrame, macro: pd.DataFrame, alpha_dat
     print("   Generating Alpha Factors Page...")
     plt.style.use('default')
     
-    fig = plt.figure(figsize=(14, 14))
+    fig = plt.figure(figsize=(14, 16)) # Increased height
     gs = fig.add_gridspec(3, 1, height_ratios=[1.2, 1, 1])
     
     # 1. Net Liquidity vs SPY
@@ -639,6 +757,36 @@ def plot_alpha_factors_page(prices: pd.DataFrame, macro: pd.DataFrame, alpha_dat
         ax3.text(0.5, 0.5, "SKEW Data Missing", ha='center')
 
     plt.tight_layout()
+    
+    # --- Interpretation Box (Bottom) ---
+    fig.subplots_adjust(bottom=0.12)
+    
+    interp_text = "Institutional Flows & Risk:\n"
+    
+    # 1. Net Liquidity
+    nl_lat = alpha_data.get("net_liquidity", {}).get("latest", 0)
+    interp_text += f"• Net Liquidity: ${nl_lat:.2f}T. Tracks Fed Balance Sheet - TGA - RRP. Rising = Asset Support.\n"
+    
+    # 2. VIX Term Structure
+    v_rat = alpha_data.get("vol_structure", {}).get("ratio")
+    if not isinstance(v_rat, pd.Series): v_rat = pd.Series([0]) 
+    curr_v = v_rat.iloc[-1] if not v_rat.empty else 0
+    
+    if curr_v > 1.0:
+        interp_text += f"• Vol Term Structure: BACKWARDATION ({curr_v:.2f}). CRASH WARNING. Immediate fear > future fear.\n"
+    else:
+        interp_text += f"• Vol Term Structure: CONTANGO ({curr_v:.2f}). Normal market structure.\n"
+        
+    # 3. SKEW
+    s_val = alpha_data.get("tail_risk", {}).get("series")
+    if not isinstance(s_val, pd.Series): s_val = pd.Series([0])
+    curr_s = s_val.iloc[-1] if not s_val.empty else 0
+    
+    if curr_s > 135: interp_text += f"• Tail Risk (SKEW): HIGH ({curr_s:.0f}). Whales are hedging against a crash.\n"
+    elif curr_s < 115: interp_text += f"• Tail Risk (SKEW): COMPLACENT ({curr_s:.0f}). Vulnerable to shocks.\n"
+    else: interp_text += f"• Tail Risk (SKEW): NORMAL ({curr_s:.0f}).\n"
+
+    fig.text(0.05, 0.02, interp_text, fontsize=10, bbox=dict(facecolor='white', alpha=0.9, edgecolor='black', boxstyle='round'))
     return fig
 
 def plot_cross_asset_page(prices: pd.DataFrame, corr_data: Dict) -> plt.Figure:
@@ -646,7 +794,7 @@ def plot_cross_asset_page(prices: pd.DataFrame, corr_data: Dict) -> plt.Figure:
     print("   Generating Cross-Asset Correlation Page...")
     plt.style.use('default')
     
-    fig = plt.figure(figsize=(14, 14))
+    fig = plt.figure(figsize=(14, 16)) # Increased height 
     gs = fig.add_gridspec(2, 1, height_ratios=[1, 0.8])
     
     # 1. Correlation Matrix Heatmap
@@ -702,6 +850,23 @@ def plot_cross_asset_page(prices: pd.DataFrame, corr_data: Dict) -> plt.Figure:
         ax2.text(0.5, 0.5, "SPY/TLT Data Missing", ha='center')
 
     plt.tight_layout()
+    
+    # --- Interpretation Box (Bottom) ---
+    fig.subplots_adjust(bottom=0.15)
+    
+    interp_text = "Cross-Asset Regime:\n"
+    interp_text += "• Correlation Matrix: Dark Red = Assets moving together (Systemic Risk). Blue = Diversification working.\n"
+    
+    # SPY vs TLT
+    rolling = corr_data.get("spy_tlt_rolling", pd.Series())
+    if not rolling.empty:
+        curr_c = rolling.iloc[-1]
+        interp_text += f"• Stock/Bond Correlation: {curr_c:.2f}. "
+        if curr_c > 0.5: interp_text += "HIGHLY CORRELATED. Bonds will NOT protect portfolios. Inflation risk dominant.\n"
+        elif curr_c < -0.5: interp_text += "NEGATIVELY CORRELATED. Magnificent diversification. Growth risk dominant.\n"
+        else: interp_text += "UNCORRELATED. Standard diversification environment.\n"
+
+    fig.text(0.05, 0.02, interp_text, fontsize=10, bbox=dict(facecolor='white', alpha=0.9, edgecolor='black', boxstyle='round'))
     return fig
 
 def plot_efficient_frontier_page(optimization_data: Dict) -> plt.Figure:
@@ -767,6 +932,26 @@ def plot_efficient_frontier_page(optimization_data: Dict) -> plt.Figure:
     ax2.set_title("2. OPTIMAL ASSET ALLOCATION (Mean-Variance)", fontsize=14, weight='bold')
     
     plt.tight_layout()
+    
+    # --- Interpretation Box (Bottom) ---
+    fig.subplots_adjust(bottom=0.15)
+    
+    interp_text = "Portfolio Optimization Insights:\n"
+    # Max Sharpe Asset
+    if "weights" in max_sharpe:
+         best_asset = max(max_sharpe["weights"], key=max_sharpe["weights"].get)
+         best_w = max_sharpe["weights"][best_asset]
+         interp_text += f"• Max Sharpe Portfolio: Heaviest allocation is {best_asset} ({best_w:.1%}). Maximizes risk-adjusted return.\n"
+         
+    # Min Vol Asset 
+    if "weights" in min_vol:
+         safe_asset = max(min_vol["weights"], key=min_vol["weights"].get)
+         safe_w = min_vol["weights"][safe_asset]
+         interp_text += f"• Min Volatility Portfolio: Heaviest allocation is {safe_asset} ({safe_w:.1%}). Focuses on capital preservation.\n"
+         
+    interp_text += "• Efficient Frontier: Portfolios on the top-left edge offer the highest return for a given level of risk."
+
+    fig.text(0.05, 0.02, interp_text, fontsize=10, bbox=dict(facecolor='white', alpha=0.9, edgecolor='black', boxstyle='round'))
     return fig
 
 def plot_predictive_models_page(df: pd.DataFrame, internals: Dict, recession_prob: pd.Series) -> plt.Figure:
@@ -821,8 +1006,26 @@ def plot_predictive_models_page(df: pd.DataFrame, internals: Dict, recession_pro
              ax2.plot(norm_series.index, norm_series.values, label=name, linewidth=1.5)
              
     ax2.set_ylabel("Change (%)")
-    ax2.legend(loc='upper left', fontsize=9)
+    ax2.legend(loc='upper left')
     ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    # --- Interpretation Box (Bottom) ---
+    fig.subplots_adjust(bottom=0.15, top=0.93)
+    
+    interp_text = "Predictive Analytics:\n"
+    # Recession
+    if not recession_prob.empty:
+         rp = recession_prob.iloc[-1]
+         if rp > 30: interp_text += f"• Recession Risk: HIGH ({rp:.1f}%). Yield curve signals economic contraction ahead.\n"
+         else: interp_text += f"• Recession Risk: LOW ({rp:.1f}%). No immediate curve-driven signal.\n"
+         
+    # Internals
+    interp_text += "• Leading Indicators: Watch for 'Cyclical' vs 'Defensive' divergence. If Defensives lead, risk-off/recession is likely."
+    
+    fig.text(0.05, 0.02, interp_text, fontsize=10, bbox=dict(facecolor='white', alpha=0.9, edgecolor='black', boxstyle='round'))
+    return fig
         
     # Add Explainer Text box
     # Footer (Enhanced Commentary)
@@ -941,6 +1144,18 @@ def plot_monte_carlo_cone(prices: pd.DataFrame, ticker: str = "SPY", days: int =
              
     plt.tight_layout()
     plt.subplots_adjust(bottom=0.25)
+    
+    # --- Interpretation Box ---
+    interp_text = (
+        "INTERPRETATION GUIDE:\n"
+        "• THE CONE: Shows the range of probable price paths based on drift (trend) and diffusion (volatility).\n"
+        "• MEDIAN PATH (Blue): The 'Base Case' projection.\n"
+        "• 95% CONFIDENCE (Light Blue): Outlier scenarios. If price hits the edge, it is empirically overextended.\n"
+        "• USE CASE: Validates price targets. If your target is outside the cone, it requires an extreme event."
+    )
+    fig.text(0.05, 0.02, interp_text, fontsize=9, family='monospace', 
+             bbox=dict(facecolor='white', alpha=0.9, edgecolor='darkblue', linewidth=1.5))
+             
     return fig
 
 def plot_stochastic_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Figure:
@@ -948,9 +1163,14 @@ def plot_stochastic_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Figur
     print(f"   Generating Stochastic Models Page for {ticker}...")
     
     if ticker not in prices.columns: return None
+    series = prices[ticker].dropna()
+    
+    fig = plt.figure(figsize=(11, 8.5))
+    fig.suptitle(f"STOCHASTIC MODELLING & REGIME DETECTION ({ticker})", fontsize=16, weight='bold', y=0.98)
+    
+    gs = fig.add_gridspec(3, 1, height_ratios=[1.5, 1, 1], hspace=0.4)
     
     # 1. Heston Calib (Simplified)
-    series = prices[ticker].dropna()
     rets = series.pct_change().dropna()
     S0 = series.iloc[-1]
     
@@ -1295,4 +1515,357 @@ def plot_antifragility_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Fi
     
     plt.tight_layout()
     plt.subplots_adjust(bottom=0.20)
+    return fig
+
+def plot_scenario_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Figure:
+    """Page 17: Scenario Analysis & Contingency Planning."""
+    print("   Generating Scenario Analysis Page...")
+    
+    if ticker not in prices.columns: return None
+    
+    series = prices[ticker].dropna()
+    current_price = series.iloc[-1]
+    
+    # 1. Calculate Probabilities
+    # Using 3 months (60 days) horizon for standard table
+    probs_1m = calculate_move_probabilities(series, days=21, n_sims=2000)
+    probs_3m = calculate_move_probabilities(series, days=63, n_sims=2000)
+    
+    # 2. Generate Contingencies
+    # Simple proxies for Regime classification (expand later)
+    # Using 1M Vol approx
+    curr_vol = series.pct_change().std() * np.sqrt(252)
+    # Skew
+    curr_skew = series.pct_change().dropna().skew()
+    
+    regime = "Normal"
+    if curr_vol > 0.20: regime = "High Vol"
+    elif curr_vol < 0.10: regime = "Low Vol"
+    
+    # Vol Score (0-1 normalized roughly)
+    vol_score = min(max((curr_vol - 0.10) / 0.20, 0), 1)
+    
+    contingencies = generate_contingencies(current_price, regime, vol_score, curr_skew)
+    
+    # Plot
+    fig = plt.figure(figsize=(11, 8.5))
+    fig.suptitle("QUANT LAB: SCENARIO ANALYSIS & CONTINGENCIES", fontsize=16, weight='bold', y=0.98)
+    
+    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1.2], hspace=0.35, wspace=0.25)
+    
+    # Panel 1: Probability Table (Text)
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax1.axis('off')
+    ax1.set_title("1. Move Probabilities (Monte Carlo)", fontsize=12, weight='bold')
+    
+    # Build Table Text
+    table_text = [["Target", "1-Month Prob", "3-Month Prob"]]
+    for target in probs_1m.index:
+        p1 = probs_1m.loc[target, "Upside Prob"]
+        # p1_down = probs_1m.loc[target, "Downside Risk"]
+        p3 = probs_3m.loc[target, "Upside Prob"]
+        # p3_down = probs_3m.loc[target, "Downside Risk"]
+        
+        # Display as range? Or just Upside for now simpler
+        # Actually show Upside vs Downside side by side?
+        # Let's simplify: Display Probability of touching +/- X%
+        
+        row = [f"{target}", f"{p1:.1%}", f"{p3:.1%}"]
+        table_text.append(row)
+        
+    table = ax1.table(cellText=table_text, loc='center', cellLoc='center', colWidths=[0.4, 0.3, 0.3])
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1, 1.5)
+    
+    # Panel 2: Visual Cone (Simplified from Page 12, focused on Targets)
+    ax2 = fig.add_subplot(gs[0, 1])
+    
+    # Re-simulate for plot small batch
+    mu = series.pct_change().mean() * 252
+    sigma = series.pct_change().std() * np.sqrt(252)
+    T = 63/252
+    t_sim, paths = simulate_gbm(current_price, mu, sigma, T, 1/252, 100)
+    
+    future_dates = pd.date_range(start=series.index[-1], periods=len(t_sim), freq='B')
+    
+    # Plot Cone
+    p5 = np.percentile(paths, 5, axis=0)
+    p95 = np.percentile(paths, 95, axis=0)
+    p50 = np.percentile(paths, 50, axis=0)
+    
+    ax2.plot(future_dates, p50, 'b-', label="Median")
+    ax2.fill_between(future_dates, p5, p95, color='blue', alpha=0.1, label="90% Cone")
+    
+    # Horizontal Lines for Targets
+    for target_pct in [0.05, -0.05]:
+        level = current_price * (1 + target_pct)
+        color = 'green' if target_pct > 0 else 'red'
+        ax2.axhline(level, linestyle='--', color=color, alpha=0.5)
+        ax2.text(future_dates[0], level, f"{target_pct:+.0%} Target", color=color, fontsize=8, va='bottom')
+        
+    ax2.set_title("2. Target Visualization (3-Month)", fontsize=12, weight='bold')
+    ax2.grid(True, alpha=0.3)
+    
+    # Panel 3: Contingency Playbook (Bottom Full Width)
+    ax3 = fig.add_subplot(gs[1, :])
+    ax3.axis('off')
+    ax3.set_title(f"3. TACTICAL CONTINGENCY PLAYBOOK (Regime: {regime})", fontsize=12, weight='bold')
+    
+    # Format DataFrame as Table
+    cols = list(contingencies.columns)
+    cell_text = []
+    for row in contingencies.itertuples(index=False):
+        cell_text.append(list(row))
+        
+    # Add colors based on Scenario type?
+    colors = []
+    # Create colors matrix matching dimensions (n_rows x n_cols)
+    for row in contingencies["Scenario"]:
+        row_colors = []
+        if "Critical" in row or "Crash" in row: base_color = "#ffcccc" # Red tint
+        elif "Euphoria" in row: base_color = "#ccffcc" # Green tint
+        else: base_color = "white"
+        
+        for _ in range(len(cols)): row_colors.append(base_color)
+        colors.append(row_colors)
+    
+    table3 = ax3.table(cellText=cell_text, colLabels=cols, loc='center', cellLoc='left', 
+                       colWidths=[0.25, 0.25, 0.35, 0.15],
+                       cellColours=colors if colors else None)
+                       
+    table3.auto_set_font_size(False)
+    table3.set_fontsize(10)
+    table3.scale(1, 2.0) # More vertical space
+    
+    # Footer
+    text_content = (
+        "INTERPRETATION GUIDE:\n"
+        "1. MOVE PROBABILITIES: Probability of touching price levels based on current volatility regime.\n"
+        "2. CONTINGENCIES: Pre-planned actions to remove emotion. If 'Condition' is met, execute 'Action'.\n"
+        "3. FRAGILITY CHECK: Playbook adapts to Skew/Kurtosis. Negative Skew = Expensive Puts = Risk Reversals preferred."
+    )
+    fig.text(0.05, 0.02, text_content, fontsize=9, family='monospace', 
+             bbox=dict(facecolor='white', alpha=0.9, edgecolor='darkblue', linewidth=1.5))
+             
+    plt.tight_layout()
+    plt.subplots_adjust(bottom=0.20)
+    return fig
+
+def plot_valuation_page(df: pd.DataFrame, fundamentals: Dict) -> plt.Figure:
+    """Generates Page: Valuation & Real Rates (Real Yields & ERP)."""
+    print("   Generating Valuation & Real Rates Page...")
+    plt.style.use('default')
+    
+    fig = plt.figure(figsize=(14, 12))
+    gs = fig.add_gridspec(2, 1, height_ratios=[1, 1])
+    
+    # 1. Real Interest Rates (10Y - Breakeven)
+    ax1 = fig.add_subplot(gs[0])
+    if "CF_Real_Yield" in df.columns:
+        real_yield = df["CF_Real_Yield"].dropna()
+        ax1.plot(real_yield.index, real_yield, color='blue', linewidth=2, label="US 10Y Real Yield")
+        
+        # Zones
+        ax1.axhline(2.0, color='red', linestyle='--', label="Restrictive (>2.0%)")
+        ax1.axhline(0.5, color='green', linestyle='--', label="Accommodative (<0.5%)")
+        ax1.axhline(0.0, color='black', linewidth=1)
+        
+        # Fill
+        ax1.fill_between(real_yield.index, real_yield, 2.0, where=(real_yield > 2.0), color='red', alpha=0.2)
+        ax1.fill_between(real_yield.index, real_yield, 0.0, where=(real_yield < 0.0), color='green', alpha=0.1, label="Negative Real Rates")
+        
+        curr_real = real_yield.iloc[-1]
+        status = "RESTRICTIVE" if curr_real > 2.0 else ("NEUTRAL" if curr_real > 0.5 else "STIMULATIVE")
+        
+        ax1.set_title(f"1. Real Interest Rates (The Cost of Capital)\nCurrent: {curr_real:.2f}% -> {status}", fontsize=14, weight='bold')
+        ax1.set_ylabel("Real Yield (%)")
+        ax1.legend(loc="upper left")
+        ax1.grid(True, alpha=0.3)
+        
+        # Commentary Box
+        text = (
+            "Implications:\n"
+            "• High Real Rates (>2%): Tight financial conditions. Headwind for Gold, Tech, & Multiples.\n"
+            "• Low/Negative Real Rates: Loose conditions. Tailwind for Hard Assets & Speculation.\n"
+            "• Trend is key: Rapidly rising real rates often trigger deleveraging events."
+        )
+        ax1.text(0.02, 0.05, text, transform=ax1.transAxes, fontsize=10, 
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='grey', boxstyle='round,pad=0.5'))
+        
+    else:
+        ax1.text(0.5, 0.5, "Real Yield Data Missing", ha='center')
+
+    # 2. Equity Risk Premium (ERP) - The Fed Model
+    ax2 = fig.add_subplot(gs[1])
+    
+    pe = fundamentals.get("SPY_PE")
+    # Fetch latest 10Y Yield from DF if not in fundamentals (it should be in DF)
+    nominal_10y = df["10Y_Yield"].iloc[-1] if "10Y_Yield" in df.columns else None
+    
+    if pe and nominal_10y:
+        earnings_yield = (1 / pe) * 100
+        erp = earnings_yield - nominal_10y
+        
+        # Bar Chart
+        labels = ['10Y Treasury Yield', 'S&P 500 Earnings Yield (1/PE)']
+        values = [nominal_10y, earnings_yield]
+        colors = ['red', 'green']
+        
+        bars = ax2.barh(labels, values, color=colors, alpha=0.7)
+        ax2.set_xlim(0, max(values) * 1.3)
+        
+        # Annotate Values
+        for bar in bars:
+            width = bar.get_width()
+            ax2.text(width + 0.1, bar.get_y() + bar.get_height()/2, f"{width:.2f}%", va='center', fontsize=12, weight='bold')
+            
+        # Draw Spread (ERP)
+        # We can visualize this as a bracket or text
+        ax2.text(max(values) * 0.5, 0.5, f"Equity Risk Premium (Spread): {erp:.2f}%", 
+                 ha='center', va='center', transform=ax2.transAxes, fontsize=16, weight='bold', 
+                 bbox=dict(facecolor='#f0f0f0', edgecolor='black', boxstyle='round,pad=1'))
+        
+        # Status
+        valuation = "ATTRACTIVE (Stocks Cheap)" if erp > 3.0 else ("FAIR VALUE" if erp > 0 else "EXPENSIVE (Stocks Rich)")
+        color_val = 'green' if erp > 0 else 'red'
+        
+        ax2.set_title(f"2. Equity Risk Premium (Fed Model Snapshot)\nValuation: {valuation}", fontsize=14, weight='bold', color=color_val)
+        ax2.set_xlabel("Yield (%)")
+        
+        # ERP Context
+        context_text = (
+            "Interpretation:\n"
+            "• ERP = Earnings Yield - Risk Free Rate.\n"
+            "• Positive ERP: Stocks offer excess return over bonds.\n"
+            "• Negative ERP: Stocks yield less than bonds (Speculative territory needs Growth)."
+        )
+        ax2.text(0.7, 0.1, context_text, transform=ax2.transAxes, fontsize=10,
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='grey'))
+        
+    else:
+        ax2.text(0.5, 0.5, "Insufficient Data for Valuation (PE or Yield Missing)", ha='center')
+        
+    plt.tight_layout()
+    return fig
+
+def plot_inflation_swap_curve(df: pd.DataFrame) -> plt.Figure:
+    """Generates Page: Inflation Expectations Term Structure (Swaps Proxy)."""
+    print("   Generating Inflation Expectations Page...")
+    plt.style.use('default')
+    
+    fig = plt.figure(figsize=(14, 12))
+    gs = fig.add_gridspec(2, 1, height_ratios=[1, 1])
+    
+    # 1. Term Structure: 5Y vs 10Y vs 5Y5Y
+    ax1 = fig.add_subplot(gs[0])
+    
+    # Check Data Availability
+    has_5y = "5Y_Breakeven" in df.columns
+    has_10y = "10Y_Breakeven" in df.columns
+    has_5y5y = "5Y5Y_Forward" in df.columns
+    
+    if has_5y5y or has_10y:
+        if has_5y:
+            breakeven_5 = df["5Y_Breakeven"].dropna()
+            ax1.plot(breakeven_5.index, breakeven_5, color='green', alpha=0.6, label="5-Year Breakeven (Near Term)")
+        
+        if has_10y:
+            breakeven_10 = df["10Y_Breakeven"].dropna()
+            ax1.plot(breakeven_10.index, breakeven_10, color='blue', alpha=0.6, label="10-Year Breakeven (Medium Term)")
+            
+        if has_5y5y:
+            fwd_5y5y = df["5Y5Y_Forward"].dropna()
+            ax1.plot(fwd_5y5y.index, fwd_5y5y, color='red', linewidth=2, label="5Y, 5Y Forward (Long Term Anchor)")
+            
+            # Fill between 5Y and 5Y5Y to show curve slope if both exist
+            if has_5y:
+                 common = fwd_5y5y.index.intersection(breakeven_5.index)
+                 ax1.fill_between(common, fwd_5y5y.loc[common], breakeven_5.loc[common], color='gray', alpha=0.1, label="Term Premium / Curve Slope")
+
+        ax1.axhline(2.0, color='black', linestyle='--', linewidth=1.5, label="Fed Target (2.0%)")
+        
+        # Get latest values for title
+        last_val = "N/A"
+        status = "ANCHORED"
+        if has_5y5y:
+            curr = fwd_5y5y.iloc[-1]
+            last_val = f"{curr:.2f}%"
+            if curr > 2.5: status = "DE-ANCHORING (High)"
+            elif curr < 1.5: status = "DEFLATIONARY RISK"
+        
+        ax1.set_title(f"1. Inflation Expectations Term Structure\nLong-Term Anchor (5Y5Y): {last_val} -> {status}", fontsize=14, weight='bold')
+        ax1.set_ylabel("Inflation Rate (%)")
+        ax1.legend(loc="upper left")
+        ax1.grid(True, alpha=0.3)
+        
+        # --- Interpretation Box ---
+        interp_text = "Interpretation:\n"
+        
+        # 1. Slope (5Y vs 5Y5Y)
+        if has_5y5y and has_5y:
+             slope = fwd_5y5y.iloc[-1] - breakeven_5.iloc[-1]
+             if slope > 0.1:
+                 interp_text += "• Curve Slope: CONTANGO (Normal). Market sees inflation rising to long-term avg.\n"
+             elif slope < -0.1:
+                 interp_text += "• Curve Slope: INVERTED (Front-Loaded). High short-term inflation expected to cool.\n"
+             else:
+                 interp_text += "• Curve Slope: FLAT. Inflation expectations are uniform across horizons.\n"
+                 
+        # 2. Anchor Level
+        if has_5y5y:
+            curr_anchor = fwd_5y5y.iloc[-1]
+            if curr_anchor > 2.5:
+                interp_text += "• Anchor Status: ELEVATED. Long-term expectations > 2.5% (Fed concern).\n"
+            elif curr_anchor < 1.8:
+                interp_text += "• Anchor Status: LOW. Risk of deflationary trap.\n"
+            else:
+                 interp_text += "• Anchor Status: STABLE. Near Fed target (2.0%).\n"
+                 
+        ax1.text(0.02, 0.1, interp_text, transform=ax1.transAxes, fontsize=10, 
+                 bbox=dict(facecolor='white', alpha=0.9, edgecolor='grey'))
+    else:
+        ax1.text(0.5, 0.5, "Inflation Swap Data Missing (Check Tickers)", ha='center')
+
+    # 2. Inflation Risk Premium (5Y5Y vs Spot CPI)
+    # Allows us to see if the market is pricing higher inflation than current realized
+    ax2 = fig.add_subplot(gs[1])
+    
+    if has_5y5y and "CPI_YoY" in df.columns:
+        fwd = df["5Y5Y_Forward"].dropna()
+        cpi = df["CPI_YoY"].dropna() * 100 # Scale to %
+        
+        # Align
+        common_idx = fwd.index.intersection(cpi.index)
+        fwd = fwd.loc[common_idx]
+        cpi = cpi.loc[common_idx]
+        
+        spread = fwd - cpi
+        
+        ax2.plot(spread.index, spread, color='purple', label="Inflation Risk Premium (5Y5Y Fwd - Current CPI)")
+        ax2.axhline(0, color='black', linewidth=1)
+        
+        ax2.fill_between(spread.index, spread, 0, where=(spread > 0), color='green', alpha=0.2, label="Market Expects HIGHER Inflation")
+        ax2.fill_between(spread.index, spread, 0, where=(spread < 0), color='red', alpha=0.2, label="Market Expects LOWER Inflation")
+        
+        curr_spread = spread.iloc[-1]
+        
+        ax2.set_title(f"2. Inflation Term Premium (Expectations vs Reality)\nSpread: {curr_spread:.2f}%", fontsize=14, weight='bold')
+        ax2.legend(loc="upper left")
+        ax2.grid(True, alpha=0.3)
+        
+        # Text Context
+        text_ctx = (
+            "Interpretation:\n"
+            "• Positive Spread: Market believes current inflation is temporary/low and will rise to long-term avg.\n"
+            "• Negative Spread: Market believes current inflation is too high and will fall (Mean Reversion).\n"
+            "• Deep Negative: High conviction in Disinflation."
+        )
+        ax2.text(0.02, 0.1, text_ctx, transform=ax2.transAxes, fontsize=10, 
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='grey'))
+        
+    else:
+         ax2.text(0.5, 0.5, "Data Missing for Premium Calculation", ha='center')
+         
+    plt.tight_layout()
     return fig

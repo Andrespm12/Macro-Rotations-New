@@ -165,6 +165,15 @@ def build_analytics(prices: pd.DataFrame, macro: pd.DataFrame, config: Dict) -> 
     if "2Y_Yield" in macro.columns: df["2Y_Yield"] = macro["2Y_Yield"]
     if "HY_Spread" in macro.columns: df["HY_Spread"] = macro["HY_Spread"]
     
+    # Pass-through Inflation Expectations for Plotting
+    if "5Y_Breakeven" in macro.columns: df["5Y_Breakeven"] = macro["5Y_Breakeven"]
+    if "10Y_Breakeven" in macro.columns: df["10Y_Breakeven"] = macro["10Y_Breakeven"]
+    if "5Y5Y_Forward" in macro.columns: df["5Y5Y_Forward"] = macro["5Y5Y_Forward"]
+    
+    # Pass-through Plumbing Rates
+    if "SOFR" in macro.columns: df["SOFR"] = macro["SOFR"]
+    if "Fed_Funds" in macro.columns: df["Fed_Funds"] = macro["Fed_Funds"]
+    
     # Check for Credit Spread proxy from HYG/IEF if HY_Spread missing?
     # We implicitly use HY_Spread from FRED.
     # Let's assume HY_Spread exists or we create 'Spread_Credit' for stress calc.

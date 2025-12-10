@@ -58,11 +58,19 @@ CONFIG: Dict = {
         "RECPROUSM156N": "Recession_Prob", # Smoothed Recession Prob
         "WSHOMCB": "Fed_Custody",   # Securities Held in Custody for Foreign Accounts (Weekly)
         "IRLTLT01JPM156N": "Japan_10Y", # Long-Term Govt Bond Yield: Japan (Monthly)
+        
+        # Overnight Rates (Plumbing)
+        "SOFR": "SOFR",             # Secured Overnight Financing Rate
+        "DFF": "Fed_Funds",         # Federal Funds Effective Rate
         "M2V": "M2_Velocity",       # Velocity of M2 Money Stock
         
         # ADDED FOR GLOBAL MACRO
         "IRLTLT01DEM156N": "Germany_10Y",
-        "IRLTLT01GBM156N": "UK_10Y"
+        "IRLTLT01GBM156N": "UK_10Y",
+        
+        # Inflation Swaps / Expectations
+        "T5YIE": "5Y_Breakeven",   # 5-Year Breakeven Inflation Rate
+        "T5YIFR": "5Y5Y_Forward"   # 5-Year, 5-Year Forward Inflation Expectation Rate
     },
     
     # --- SETTINGS ---
