@@ -36,7 +36,7 @@ def run_backtest_plot(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
     
     for strat in curves.columns:
         series = curves[strat]
-        rets = series.pct_change().dropna()
+        rets = series.pct_change().infer_objects(copy=False).dropna()
         mu = rets.mean()
         sigma = rets.std()
         last_price = series.iloc[-1]
@@ -455,7 +455,7 @@ def plot_forward_models(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
         
         # Recalculate basic transitions for bar chart
         monthly_prices = prices[valid_sectors].resample('ME').last()
-        monthly_rets = monthly_prices.pct_change().dropna()
+        monthly_rets = monthly_prices.pct_change().infer_objects(copy=False).dropna()
         leaders = monthly_rets.idxmax(axis=1)
         curr_leader = rot_data["current_leader"]
         
@@ -500,7 +500,7 @@ def plot_forward_models(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
     if seas_data["curr_month"] != "N/A":
         # Recalculate monthly seasonality
         spy = prices["SPY"]
-        spy_monthly = spy.resample('ME').last().pct_change().dropna()
+        spy_monthly = spy.resample('ME').last().pct_change().infer_objects(copy=False).dropna()
         df_m = pd.DataFrame({"Ret": spy_monthly})
         df_m["Month"] = df_m.index.month
         monthly_stats = df_m.groupby("Month")["Ret"].mean()
@@ -570,7 +570,7 @@ def plot_quant_lab_dashboard(prices: pd.DataFrame) -> plt.Figure:
     # 1. Volatility Regime
     ax1 = fig.add_subplot(gs[0, :])
     if "SPY" in prices.columns:
-        spy_ret = prices["SPY"].pct_change().dropna()
+        spy_ret = prices["SPY"].pct_change().infer_objects(copy=False).dropna()
         
         # GARCH Fit
         try:
@@ -594,7 +594,7 @@ def plot_quant_lab_dashboard(prices: pd.DataFrame) -> plt.Figure:
     # 2. Monte Carlo
     ax2 = fig.add_subplot(gs[1, 0])
     if "SPY" in prices.columns:
-        spy_ret = prices["SPY"].pct_change().dropna()
+        spy_ret = prices["SPY"].pct_change().infer_objects(copy=False).dropna()
         S0 = prices["SPY"].iloc[-1]
         mu = spy_ret.mean() * 252
         sigma_sim = spy_ret.std() * np.sqrt(252)
@@ -1868,4 +1868,151 @@ def plot_inflation_swap_curve(df: pd.DataFrame) -> plt.Figure:
          ax2.text(0.5, 0.5, "Data Missing for Premium Calculation", ha='center')
          
     plt.tight_layout()
+    return fig
+
+def plot_global_macro_fx_page(df: pd.DataFrame, prices: pd.DataFrame, macro: pd.DataFrame, global_flows: Dict) -> plt.Figure:
+    """Generates Page: Global Macro, FX & Capital Flows."""
+    print("   Generating Global FX & Rates Page...")
+    plt.style.use('default')
+    
+    fig = plt.figure(figsize=(14, 16))
+    gs = fig.add_gridspec(3, 1, height_ratios=[1, 1, 1])
+    
+    # 1. Global Sovereign Yields Overlay (10Y)
+    ax1 = fig.add_subplot(gs[0])
+    
+    # US 10Y
+    if "10Y_Yield" in macro.columns:
+        us10 = macro["10Y_Yield"].dropna()
+        ax1.plot(us10.index, us10, color='blue', linewidth=2, label="US 10Y Treasury")
+        
+    # Germany 10Y
+    if "Germany_10Y" in macro.columns:
+        de10 = macro["Germany_10Y"].dropna()
+        ax1.plot(de10.index, de10, color='black', linestyle='--', label="Germany 10Y Bund")
+        
+    # Japan 10Y
+    if "Japan_10Y" in macro.columns:
+        jp10 = macro["Japan_10Y"].dropna()
+        ax1.plot(jp10.index, jp10, color='red', linestyle='--', label="Japan 10Y JGB")
+        
+    # UK 10Y
+    if "UK_10Y" in macro.columns:
+        uk10 = macro["UK_10Y"].dropna()
+        ax1.plot(uk10.index, uk10, color='green', linestyle=':', label="UK 10Y Gilt")
+        
+    ax1.set_title("1. Global Sovereign Bond Yields (10Y Nominal)\nMonitor: Yield Divergence drives Capital Flows", fontsize=14, weight='bold')
+    ax1.set_ylabel("Yield (%)")
+    ax1.legend(loc="upper left")
+    ax1.grid(True, alpha=0.3)
+    
+    # 2. The Carry Trade (US-JP Spread vs USD/JPY)
+    ax2 = fig.add_subplot(gs[1])
+    
+    if "10Y_Yield" in macro.columns and "Japan_10Y" in macro.columns and "JPY=X" in prices.columns:
+        # Align Data
+        us = macro["10Y_Yield"]
+        jp = macro["Japan_10Y"]
+        fx = prices["JPY=X"]
+        
+        common = us.index.intersection(jp.index).intersection(fx.index)
+        
+        spread = (us.loc[common] - jp.loc[common])
+        usd_jpy = fx.loc[common]
+        
+        # Plot Spread (Left Axis)
+        color_spread = 'darkblue'
+        ax2.plot(spread.index, spread, color=color_spread, label="US-Japan 10Y Yield Spread")
+        ax2.set_ylabel("Yield Spread (%)", color=color_spread, fontsize=12)
+        ax2.tick_params(axis='y', labelcolor=color_spread)
+        
+        # Plot FX (Right Axis)
+        ax2_twin = ax2.twinx()
+        color_fx = 'darkred'
+        ax2_twin.plot(usd_jpy.index, usd_jpy, color=color_fx, linestyle='--', alpha=0.7, label="USD/JPY Exchange Rate")
+        ax2_twin.set_ylabel("USD/JPY", color=color_fx, fontsize=12)
+        ax2_twin.tick_params(axis='y', labelcolor=color_fx)
+        
+        # Status
+        carry_status = global_flows.get("japan_carry", {}).get("status", "N/A")
+        
+        ax2.set_title(f"2. The 'Carry Trade' Engine (Yield Spread vs FX)\nStatus: {carry_status}", fontsize=14, weight='bold')
+        
+        # Legend
+        lines1, labels1 = ax2.get_legend_handles_labels()
+        lines2, labels2 = ax2_twin.get_legend_handles_labels()
+        ax2.legend(lines1 + lines2, labels1 + labels2, loc="upper left")
+        ax2.grid(True, alpha=0.3)
+    else:
+        ax2.text(0.5, 0.5, "Insufficient Data for Carry Trade Analysis", ha='center')
+
+    # 3. Currency Relative Performance (1-Year Normalized)
+    ax3 = fig.add_subplot(gs[2])
+    
+    currencies = {
+        "USD (DXY)": "DX-Y.NYB" if "DX-Y.NYB" in prices.columns else "UUP",
+        "Euro (FXE)": "FXE",
+        "Yen (FXY)": "FXY",
+        "Yuan (CNY=X)": "CNY=X"
+    }
+    
+    # Filter for existing
+    valid_curr = {k: v for k, v in currencies.items() if v in prices.columns}
+    
+    if valid_curr:
+        # Get last 252 days
+        start_idx = -252
+        
+        for name, ticker in valid_curr.items():
+            series = prices[ticker].iloc[start_idx:].dropna()
+            if not series.empty:
+                # Normalize to 100
+                norm = (series / series.iloc[0]) * 100
+                
+                # Invert logic for standard pair convention if needed?
+                # DXY: Long USD.
+                # FXE: Long Euro (Short USD).
+                # FXY: Long Yen (Short USD).
+                # CNY=X: USD/CNY usually. If it's USD/CNY, rising = Weak Yuan.
+                # Let's plot raw ETF performance for simplicity as they represent "Long that Currency against USD" (except DXY).
+                # Note: CNY=X in Yahoo is usually USD/CNY.
+                
+                linewidth = 2 if "USD" in name else 1.5
+                alpha = 1.0 if "USD" in name else 0.7
+                
+                ax3.plot(norm.index, norm, label=name, linewidth=linewidth, alpha=alpha)
+                
+        ax3.axhline(100, color='black', linestyle='--', linewidth=1)
+        ax3.set_title("3. Currency Momentum (1-Year Relative Performance, Normalized=100)", fontsize=14, weight='bold')
+        ax3.set_ylabel("Rel Perf")
+        ax3.legend(loc="upper left")
+        ax3.grid(True, alpha=0.3)
+        
+    else:
+        ax3.text(0.5, 0.5, "Currency Data Missing", ha='center')
+        
+    plt.tight_layout()
+    
+    # Interpretation
+    fig.subplots_adjust(bottom=0.12)
+    interp_text = "Global Macro & FX Insights:\n"
+    
+    # 1. Yield Divergence
+    if "10Y_Yield" in macro.columns:
+        us_y = macro["10Y_Yield"].dropna().iloc[-1]
+        interp_text += f"• US Yields: {us_y:.2f}%. "
+        if "Germany_10Y" in macro.columns:
+             de_y = macro["Germany_10Y"].dropna().iloc[-1]
+             diff = us_y - de_y
+             interp_text += f"vs Bunds: {diff:.2f}% spread. "
+    
+    # 2. Carry
+    carry_stat = global_flows.get("japan_carry", {}).get("status", "N/A")
+    if "UNWINDING" in carry_stat:
+        interp_text += "\n• CARRY UNWIND ALERT: JPY Strengthening while Yield Spread compresses. Risk-Off signal."
+    elif "ACCELERATING" in carry_stat:
+        interp_text += "\n• CARRY TRADE ON: JPY Weakening + Yield Spread widening. Supports Global Liquidity."
+        
+    fig.text(0.05, 0.02, interp_text, fontsize=10, bbox=dict(facecolor='white', alpha=0.9, edgecolor='black', boxstyle='round'))
+    
     return fig

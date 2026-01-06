@@ -27,7 +27,7 @@ def calculate_regime_gmm(prices: pd.DataFrame) -> Dict:
     
     spy = prices["SPY"]
     spy_w = spy.resample('W').last()
-    rets = spy_w.pct_change().dropna()
+    rets = spy_w.pct_change().infer_objects(copy=False).dropna()
     vol = rets.rolling(4).std().dropna()
     
     df_feat = pd.DataFrame({"Ret": rets, "Vol": vol}).dropna()
@@ -197,7 +197,7 @@ def build_analytics(prices: pd.DataFrame, macro: pd.DataFrame, config: Dict) -> 
     if "CPI_YoY" in macro.columns: df["CPI_YoY"] = macro["CPI_YoY"]
     elif "CPI" in macro.columns:
          # Fallback but warn
-         df["CPI_YoY"] = macro["CPI"].pct_change(252)
+         df["CPI_YoY"] = macro["CPI"].pct_change(252).infer_objects(copy=False)
     if "Unemployment" in macro.columns:
         df["Unemployment"] = macro["Unemployment"] / 100 
 
@@ -223,8 +223,8 @@ def build_analytics(prices: pd.DataFrame, macro: pd.DataFrame, config: Dict) -> 
     df["ROT_Fin_Tech"]    = ratio("XLF", "XLK")
     
     if "SPY" in prices.columns and "TLT" in prices.columns:
-        spy_ret = prices["SPY"].pct_change()
-        tlt_ret = prices["TLT"].pct_change()
+        spy_ret = prices["SPY"].pct_change().infer_objects(copy=False)
+        tlt_ret = prices["TLT"].pct_change().infer_objects(copy=False)
         df["ROT_SPY_TLT_Corr"] = spy_ret.rolling(60).corr(tlt_ret)
     else:
         df["ROT_SPY_TLT_Corr"] = 0.0
@@ -265,8 +265,14 @@ def build_analytics(prices: pd.DataFrame, macro: pd.DataFrame, config: Dict) -> 
 
 def add_trends_and_score(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
     """Adds MAs and calculates the composite Macro Score."""
+    new_cols = {}
     for col in df.columns:
-        df[f"{col}_MA200"] = df[col].rolling(config["ma_long"]).mean()
+        # Skip if already exists or isn't numeric (optional check, but rolling works on numeric)
+        if pd.api.types.is_numeric_dtype(df[col]):
+            new_cols[f"{col}_MA200"] = df[col].rolling(config["ma_long"]).mean()
+            
+    if new_cols:
+        df = pd.concat([df, pd.DataFrame(new_cols, index=df.index)], axis=1)
         
     risk_map = {
         "CF_Liquidity_Valve": 1,
@@ -291,10 +297,17 @@ def add_trends_and_score(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
     
     for col, direction in risk_map.items():
         if col not in df.columns: continue
-        ma = df[f"{col}_MA200"]
+        ma_col = f"{col}_MA200"
+        if ma_col not in df.columns: continue
+        
+        ma = df[ma_col]
+        # Avoid division by zero
         dist = (df[col] / ma - 1.0) * 100
         
         raw_score = pd.Series(0.0, index=df.index)
+        # Handle NAs in dist
+        dist = dist.fillna(0)
+        
         raw_score[dist > threshold] = 1.0
         raw_score[dist < -threshold] = -1.0
         
@@ -304,7 +317,7 @@ def add_trends_and_score(df: pd.DataFrame, config: Dict) -> pd.DataFrame:
     if valid_count > 0:
         df["MACRO_SCORE"] = score_series / valid_count
 
-    return df
+    return df.copy() # Return copy to de-fragment
 
 def calculate_macro_radar(df: pd.DataFrame, prices: pd.DataFrame) -> pd.DataFrame:
     """Calculates the 1-Year Percentile Rank (0-100) for the Macro Radar."""

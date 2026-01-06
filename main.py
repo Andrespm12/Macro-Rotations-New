@@ -9,7 +9,7 @@ import pandas as pd
 
 from core.config import CONFIG
 from data.loader import download_data
-from analytics.macro_models import build_analytics, add_trends_and_score
+from analytics.macro_models import build_analytics, add_trends_and_score, calculate_global_flows
 from analytics.alpha_models import calculate_net_liquidity, calculate_vol_term_structure, calculate_tail_risk
 from analytics.quant import calculate_cross_asset_correlations, calculate_cta_momentum, optimize_portfolio, calculate_forward_returns, calculate_market_internals
 from plotting.charts import (
@@ -18,7 +18,8 @@ from plotting.charts import (
     plot_alpha_factors_page, plot_cross_asset_page, plot_efficient_frontier_page,
     plot_predictive_models_page, plot_monte_carlo_cone, plot_stochastic_page,
     plot_mean_reversion_page, plot_microstructure_page, plot_antifragility_page,
-    plot_scenario_page, plot_valuation_page, plot_inflation_swap_curve
+    plot_scenario_page, plot_valuation_page, plot_inflation_swap_curve,
+    plot_global_macro_fx_page
 )
 from plotting.report import generate_pdf_report
 
@@ -45,6 +46,9 @@ def main():
     print("Running Cross-Asset & CTA Models...")
     corr_data = calculate_cross_asset_correlations(prices)
     cta_data = calculate_cta_momentum(prices)
+    
+    # 2d. Global FX Flows
+    global_flows = calculate_global_flows(prices, macro)
     
     # 2d. Portfolio Optimization (Phase 7: Macro-Adjusted)
     print("Running Portfolio Optimization (Macro-Adjusted)...")
@@ -80,6 +84,10 @@ def main():
     # Plumbing
     fig_plumb = plot_monetary_plumbing(df)
     figures["plumbing"] = fig_plumb
+    
+    # Global FX
+    fig_fx = plot_global_macro_fx_page(df, prices, macro, global_flows)
+    figures["global_fx"] = fig_fx
     
     # Radar
     fig_radar = plot_macro_radar_chart(df, prices)

@@ -29,7 +29,7 @@ CONFIG: Dict = {
         # Commodities
         "CPER",
         # Volatility
-        "^MOVE", "^VIX3M", "^VIX", "^VXN", "^GVZ", "^VXTLT", "^SKEW",
+        "^MOVE", "^VIX3M", "^VIX", "^VXN", "^GVZ", "^SKEW",
         # Data needed for FX Playbook
         # Data needed for FX Playbook
         "EURUSD=X", "CNY=X", 

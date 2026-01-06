@@ -104,7 +104,7 @@ def generate_quant_synthesis(df: pd.DataFrame, prices: pd.DataFrame, alpha_data:
     if prices is None or "SPY" not in prices.columns: return ""
     
     spy = prices["SPY"].dropna()
-    rets = spy.pct_change().dropna()
+    rets = spy.pct_change().infer_objects(copy=False).dropna()
     curr_price = spy.iloc[-1]
     
     # 1. On-the-fly Metrics
@@ -315,9 +315,9 @@ def generate_capital_flows_commentary(df: pd.DataFrame, prices: pd.DataFrame = N
         z_val = last[col]
         base_name = col.replace("_Z", "")
         if z_val > 2.0:
-            anomalies.append(f"⚠️ {base_name} is OVEREXTENDED (+{z_val:.1f}σ). Prone to Mean Reversion.")
+            anomalies.append(f"[!] {base_name} is OVEREXTENDED (+{z_val:.1f}σ). Prone to Mean Reversion.")
         elif z_val < -2.0:
-            anomalies.append(f"✅ {base_name} is OVERSOLD ({z_val:.1f}σ). Potential Bounce.")
+            anomalies.append(f"[OK] {base_name} is OVERSOLD ({z_val:.1f}σ). Potential Bounce.")
     anomaly_text = "\n".join(anomalies) if anomalies else "None. No statistical extremes detected (>2 Sigma)."
 
     # Quant Lab
@@ -330,7 +330,7 @@ def generate_capital_flows_commentary(df: pd.DataFrame, prices: pd.DataFrame = N
             if ticker not in prices.columns: continue
             
             # Data Prep
-            ret = prices[ticker].pct_change().dropna()
+            ret = prices[ticker].pct_change().infer_objects(copy=False).dropna()
             
             # A. Volatility Regime (GARCH)
             try:
@@ -375,7 +375,7 @@ def generate_capital_flows_commentary(df: pd.DataFrame, prices: pd.DataFrame = N
 
         if "SPY" in prices.columns:
             S0 = prices["SPY"].iloc[-1]
-            sigma_spy = prices["SPY"].pct_change().std() * np.sqrt(252)
+            sigma_spy = prices["SPY"].pct_change().infer_objects(copy=False).std() * np.sqrt(252)
             # ATM 30-Day Option
             greeks = quant_engine.calculate_greeks(S0, S0, 30/365.0, 0.045, sigma_spy, "call")
             
@@ -652,6 +652,11 @@ def generate_pdf_report(df: pd.DataFrame, prices: pd.DataFrame, figures: Dict[st
         if "plumbing" in figures:
             pdf.savefig(figures["plumbing"])
             plt.close(figures["plumbing"])
+
+        # Page 5b: Global FX & Rates (New)
+        if "global_fx" in figures:
+            pdf.savefig(figures["global_fx"])
+            plt.close(figures["global_fx"])
 
         # Page 6: Valuation & Real Rates (Cost of Capital)
         if "valuation" in figures:

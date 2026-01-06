@@ -57,7 +57,7 @@ def download_data(config: Dict, use_cache: bool = True) -> Tuple[pd.DataFrame, p
     
     try:
         # Progress=False to keep stdout clean
-        prices = yf.download(tickers, start=start, end=end, progress=False)["Close"]
+        prices = yf.download(tickers, start=start, end=end, progress=False, auto_adjust=False)["Close"]
         
         # Handle single ticker edge case
         if isinstance(prices, pd.Series):

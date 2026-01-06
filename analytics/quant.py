@@ -293,7 +293,7 @@ def calculate_systemic_risk_pca(prices: pd.DataFrame) -> Dict:
     
     if len(valid) < 3: return res
     
-    rets = prices[valid].pct_change().dropna()
+    rets = prices[valid].pct_change().infer_objects(copy=False).dropna()
     window = 126
     absorption_history = []
     dates = []
@@ -340,7 +340,7 @@ def calculate_garch_crash_prob(prices: pd.DataFrame) -> Dict:
     if "SPY" not in prices.columns: return res
     
     spy = prices["SPY"]
-    rets = spy.pct_change().dropna() * 100
+    rets = spy.pct_change().infer_objects(copy=False).dropna() * 100
     
     lambda_param = 0.94
     vol_series = rets.ewm(alpha=(1-lambda_param)).std()
@@ -366,8 +366,8 @@ def calculate_correlation_surprise(prices: pd.DataFrame) -> Dict:
     
     if "SPY" not in prices.columns or "TLT" not in prices.columns: return res
     
-    spy = prices["SPY"].pct_change().dropna()
-    tlt = prices["TLT"].pct_change().dropna()
+    spy = prices["SPY"].pct_change().infer_objects(copy=False).dropna()
+    tlt = prices["TLT"].pct_change().infer_objects(copy=False).dropna()
     
     df_c = pd.DataFrame({"SPY": spy, "TLT": tlt}).dropna()
     
@@ -432,7 +432,7 @@ def calculate_strategy_performance(df: pd.DataFrame, prices: pd.DataFrame):
     missing = [a for a in assets if a not in prices.columns]
     if missing: return None, None
         
-    rets = prices[assets].pct_change().dropna()
+    rets = prices[assets].pct_change().infer_objects(copy=False).dropna()
     spy_ret = rets["SPY"]
     
     # 1. Macro Regime
@@ -539,7 +539,7 @@ def calculate_strategy_performance(df: pd.DataFrame, prices: pd.DataFrame):
         total_ret = (s.iloc[-1] / s.iloc[0]) - 1
         cagr = (1 + total_ret) ** (1 / years) - 1
         
-        daily_rets = s.pct_change().dropna()
+        daily_rets = s.pct_change().infer_objects(copy=False).dropna()
         mean = daily_rets.mean() * 252
         std = daily_rets.std() * np.sqrt(252)
         sharpe = mean / std if std > 0 else 0
@@ -562,7 +562,7 @@ def calculate_cross_asset_correlations(prices: pd.DataFrame) -> Dict:
     if len(valid_basket) < 2: return {}
     
     # 1. Current Correlation Matrix (30 Day)
-    rets = prices[valid_basket].pct_change().dropna()
+    rets = prices[valid_basket].pct_change().infer_objects(copy=False).dropna()
     corr_matrix = rets.iloc[-30:].corr()
     
     # 2. Rolling Correlation (SPY vs TLT) - 6 Month
@@ -654,7 +654,7 @@ def calculate_forward_returns(prices: pd.DataFrame, macro_score: float, cpi: flo
     
     # 1. Base: Historical Mean (Last Year)
     data = prices[valid_basket].iloc[-252:].dropna()
-    base_rets = data.pct_change().mean() * 252
+    base_rets = data.pct_change().infer_objects(copy=False).mean() * 252
     
     # 2. Adjustments (Black-Litterman Lite)
     adj = pd.Series(0.0, index=valid_basket)
@@ -704,7 +704,7 @@ def optimize_portfolio(prices: pd.DataFrame, risk_free_rate: float = 0.045, expe
     
     # Data Prep (1 Year)
     data = prices[valid_basket].iloc[-252:].dropna()
-    returns = data.pct_change().dropna()
+    returns = data.pct_change().infer_objects(copy=False).dropna()
     
     # Use Forward Returns if provided, else Historical Mean
     if expected_returns is not None:
