@@ -14,6 +14,9 @@ from sklearn.decomposition import PCA
 from scipy.stats import norm
 from scipy.optimize import minimize
 from typing import Dict, Tuple
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 # ==========================================
 # MODULE 1: STOCHASTIC PROCESSES (GBM)
@@ -138,7 +141,7 @@ def calculate_recession_prob(spread_series: pd.Series) -> pd.Series:
 
 def calculate_option_skew(ticker_symbol: str = "SPY") -> Dict:
     """Calculates Volatility Skew (Put IV - Call IV)."""
-    print(f"   Calculating Vol Skew for {ticker_symbol}...")
+    logger.info("Calculating Vol Skew for %s...", ticker_symbol)
     res = {"skew": None, "status": "N/A", "put_iv": None, "call_iv": None}
     
     try:
@@ -168,13 +171,13 @@ def calculate_option_skew(ticker_symbol: str = "SPY") -> Dict:
         res = {"skew": skew, "status": status, "put_iv": put_iv, "call_iv": call_iv}
         
     except Exception as e:
-        print(f"   Skew Error: {e}")
+        logger.error("Skew Error: %s", e)
         
     return res
 
 def calculate_gamma_flip(ticker_symbol: str = "SPY") -> Dict:
     """Estimates the 'Gamma Flip' Level (Zero Gamma)."""
-    print(f"   Calculating Gamma Flip Level for {ticker_symbol}...")
+    logger.info("Calculating Gamma Flip Level for %s...", ticker_symbol)
     res = {"level": None, "current_price": None, "status": "N/A"}
     
     try:
@@ -226,13 +229,13 @@ def calculate_gamma_flip(ticker_symbol: str = "SPY") -> Dict:
         res = {"level": flip_level, "current_price": current_price, "status": status}
         
     except Exception as e:
-        print(f"   Gamma Flip Error: {e}")
+        logger.error("Gamma Flip Error: %s", e)
         
     return res
 
 def get_options_data(ticker_symbol: str = "SPY", calc_gex: bool = False) -> Dict:
     """Fetches real-time options data for Sentiment & Structure."""
-    print(f"   Fetching Options Data for {ticker_symbol}...")
+    logger.info("Fetching Options Data for %s...", ticker_symbol)
     metrics = {"pcr": None, "iv_call": None, "net_oi": None, "max_pain": None}
     
     try:
@@ -279,13 +282,13 @@ def get_options_data(ticker_symbol: str = "SPY", calc_gex: bool = False) -> Dict
             metrics["max_pain"] = pain_strike
             
     except Exception as e:
-        print(f"   Options Data Error: {e}")
+        logger.error("Options Data Error: %s", e)
         
     return metrics
 
 def calculate_systemic_risk_pca(prices: pd.DataFrame) -> Dict:
     """Calculates Systemic Risk using PCA Absorption Ratio."""
-    print("   Calculating Systemic Risk (PCA)...")
+    logger.info("Calculating Systemic Risk (PCA)...")
     res = {"ratio": None, "status": "N/A", "history": pd.Series(dtype=float)}
     
     basket = ["SPY", "TLT", "GLD", "UUP", "XLE"]
@@ -334,7 +337,7 @@ def calculate_systemic_risk_pca(prices: pd.DataFrame) -> Dict:
 
 def calculate_garch_crash_prob(prices: pd.DataFrame) -> Dict:
     """Estimates 'Crash Probability' using simplified GARCH-like EWMA."""
-    print("   Calculating GARCH Crash Probability...")
+    logger.info("Calculating GARCH Crash Probability...")
     res = {"prob": None, "vol_forecast": None, "status": "N/A"}
     
     if "SPY" not in prices.columns: return res
@@ -361,7 +364,7 @@ def calculate_garch_crash_prob(prices: pd.DataFrame) -> Dict:
 
 def calculate_correlation_surprise(prices: pd.DataFrame) -> Dict:
     """Calculates Correlation Surprise (Stocks vs Bonds)."""
-    print("   Calculating Correlation Surprise...")
+    logger.info("Calculating Correlation Surprise...")
     res = {"surprise": None, "status": "N/A", "curr_corr": None}
     
     if "SPY" not in prices.columns or "TLT" not in prices.columns: return res
@@ -390,7 +393,7 @@ def get_erp_snapshot(ticker_symbol: str = "SPY", real_yield: float = 2.0) -> Dic
     ERP = Earnings Yield - Real Yield
     Returns dict with PE, Earnings Yield, ERP, and Rating.
     """
-    print(f"   Fetching Fundamentals for {ticker_symbol} (ERP Calc)...")
+    logger.info("Fetching Fundamentals for %s (ERP Calc)...", ticker_symbol)
     res = {"pe": None, "ey": None, "erp": None, "rating": "N/A"}
     
     try:
@@ -414,7 +417,7 @@ def get_erp_snapshot(ticker_symbol: str = "SPY", real_yield: float = 2.0) -> Dic
             res = {"pe": pe, "ey": ey, "erp": erp, "rating": rating}
             
     except Exception as e:
-        print(f"   ERP Error: {e}")
+        logger.error("ERP Error: %s", e)
         
     return res
 
@@ -511,7 +514,7 @@ def calculate_strategy_performance(df: pd.DataFrame, prices: pd.DataFrame):
             daily_strat_ret = (d_rets * d_mask).sum(axis=1) / 3
             curves["Sector Leaders (Top 3)"] = (1 + daily_strat_ret).cumprod()
     except Exception as e:
-        print(f"Sector Strat Error: {e}")
+        logger.error("Sector Strat Error: %s", e)
         
     # 9. Vol Control
     try:
@@ -521,7 +524,7 @@ def calculate_strategy_performance(df: pd.DataFrame, prices: pd.DataFrame):
         vol_ctrl_ret = spy_ret * weight
         curves["Vol Control (12%)"] = (1 + vol_ctrl_ret).cumprod()
     except Exception as e:
-        print(f"Vol Ctrl Error: {e}")
+        logger.error("Vol Ctrl Error: %s", e)
 
     # Metrics
     metrics = {}
@@ -554,7 +557,7 @@ def calculate_strategy_performance(df: pd.DataFrame, prices: pd.DataFrame):
 
 def calculate_cross_asset_correlations(prices: pd.DataFrame) -> Dict:
     """Calculates Rolling Correlations for Key Assets."""
-    print("   Calculating Cross-Asset Correlations...")
+    logger.info("Calculating Cross-Asset Correlations...")
     # diverse basket
     basket = ["SPY", "TLT", "GLD", "UUP", "BTC-USD"]
     valid_basket = [t for t in basket if t in prices.columns]
@@ -574,7 +577,7 @@ def calculate_cross_asset_correlations(prices: pd.DataFrame) -> Dict:
 
 def calculate_cta_momentum(prices: pd.DataFrame) -> pd.DataFrame:
     """Calculates Multi-Timeframe Trend Signals (The CTA Monitor)."""
-    print("   Calculating CTA Trend Signals...")
+    logger.info("Calculating CTA Trend Signals...")
     
     # Global Macro Basket for Monitor
     basket = ["SPY", "QQQ", "IWM", "EEM", "TLT", "GLD", "UUP", "BTC-USD", "GSG"] # GSG = Commodities proxy if available
@@ -620,7 +623,7 @@ def calculate_cta_momentum(prices: pd.DataFrame) -> pd.DataFrame:
 
 def calculate_market_internals(prices: pd.DataFrame) -> Dict:
     """Calculates Leading Market Internal Ratios for Predictive Modeling."""
-    print("   Calculating Market Internals (Leading Indicators)...")
+    logger.info("Calculating Market Internals (Leading Indicators)...")
     internals = {}
     
     # 1. Risk Appetite: Discretionary vs Staples
@@ -647,7 +650,7 @@ def calculate_market_internals(prices: pd.DataFrame) -> Dict:
 
 def calculate_forward_returns(prices: pd.DataFrame, macro_score: float, cpi: float = 0.0) -> pd.Series:
     """Calculates Forward-Looking Component Returns based on Macro Regime."""
-    print(f"   Calculating Forward-Looking Returns (Macro Score: {macro_score:.2f}, CPI: {cpi:.1%})...")
+    logger.info("Calculating Forward-Looking Returns (Macro Score: %.2f, CPI: %.1f%%)...", macro_score, cpi * 100)
     
     basket = ["SPY", "TLT", "GLD", "UUP", "BTC-USD"]
     valid_basket = [t for t in basket if t in prices.columns]
@@ -686,15 +689,15 @@ def calculate_forward_returns(prices: pd.DataFrame, macro_score: float, cpi: flo
     # Clip to reasonable bounds [-20%, +50%]
     final_exp_rets = final_exp_rets.clip(-0.2, 0.5)
     
-    print("      Adjustments Applied:")
+    logger.debug("Adjustments Applied:")
     for asset, val in adj.items():
-        if val != 0: print(f"      - {asset}: {val:+.1%}")
+        if val != 0: logger.debug("  - %s: %+.1f%%", asset, val * 100)
             
     return final_exp_rets
 
 def optimize_portfolio(prices: pd.DataFrame, risk_free_rate: float = 0.045, expected_returns: pd.Series = None) -> Dict:
     """Performs Mean-Variance Optimization via Monte Carlo Simulation."""
-    print("   Running Portfolio Optimization (Efficient Frontier)...")
+    logger.info("Running Portfolio Optimization (Efficient Frontier)...")
     
     # diverse basket
     basket = ["SPY", "TLT", "GLD", "UUP", "BTC-USD"]
@@ -710,10 +713,10 @@ def optimize_portfolio(prices: pd.DataFrame, risk_free_rate: float = 0.045, expe
     if expected_returns is not None:
         # Align with valid basket
         mean_ret = expected_returns.reindex(valid_basket).fillna(0.0)
-        print("   -> Using Regime-Adjusted Expected Returns.")
+        logger.info("Using Regime-Adjusted Expected Returns.")
     else:
         mean_ret = returns.mean() * 252
-        print("   -> Using Historical Mean Returns.")
+        logger.info("Using Historical Mean Returns.")
         
     cov_matrix = returns.cov() * 252
     

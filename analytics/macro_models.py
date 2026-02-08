@@ -8,6 +8,9 @@ from scipy.stats import norm, percentileofscore
 from typing import Dict
 from analytics.rotations import calculate_seasonality # Need imports
 # from analytics.quant import calculate_recession_prob as calc_rec_ignored # REMOVED
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 # Helper
 def calculate_recession_prob(spread_series: pd.Series) -> pd.Series:
@@ -20,7 +23,7 @@ def calculate_recession_prob(spread_series: pd.Series) -> pd.Series:
 
 def calculate_regime_gmm(prices: pd.DataFrame) -> Dict:
     """Identifies Market Regime using GMM."""
-    print("   Running GMM Regime Detection...")
+    logger.info("Running GMM Regime Detection...")
     res = {"current_state": "N/A", "probs": [], "trans_matrix": None, "labels": []}
     
     if "SPY" not in prices.columns: return res
@@ -70,13 +73,13 @@ def calculate_regime_gmm(prices: pd.DataFrame) -> Dict:
             "dates": df_feat.index
         }
     except Exception as e:
-        print(f"   GMM Error: {e}")
+        logger.error("GMM Error: %s", e)
         
     return res
 
 def calculate_global_flows(prices: pd.DataFrame, macro: pd.DataFrame) -> Dict:
     """Calculates Global Capital Flow indicators."""
-    print("   Calculating Global Capital Flows...")
+    logger.info("Calculating Global Capital Flows...")
     res = {
         "usd_strength": {"value": None, "status": "N/A"},
         "japan_carry": {"value": None, "status": "N/A"},
@@ -121,7 +124,7 @@ def calculate_global_flows(prices: pd.DataFrame, macro: pd.DataFrame) -> Dict:
 
 def calculate_liquidity_stress(df: pd.DataFrame) -> Dict:
     """Calculates Liquidity Stress (Credit Spread + VIX)."""
-    print("   Calculating Liquidity Stress...")
+    logger.info("Calculating Liquidity Stress...")
     res = {"level": None, "status": "N/A"}
     
     if "Spread_Credit" in df.columns and "CF_VIX" in df.columns:
@@ -147,119 +150,117 @@ def calculate_liquidity_stress(df: pd.DataFrame) -> Dict:
 
 def build_analytics(prices: pd.DataFrame, macro: pd.DataFrame, config: Dict) -> pd.DataFrame:
     """Constructs ALL ratios: The Original Rotations + The Capital Flows Plumbing."""
-    df = pd.DataFrame(index=prices.index)
-    
+    # Build all columns in a dict first, then concat once to avoid fragmentation
+    cols = {}
+
     def ratio(n, d):
         return prices[n] / prices[d]
 
     # PART A: Capital Flows
-    df["CF_Liquidity_Valve"] = ratio("BTC-USD", "GLD")
-    df["CF_Real_Yield"] = macro["10Y_Yield"] - macro["10Y_Breakeven"]
-    df["CF_Breadth"] = ratio("RSP", "SPY")
-    df["CF_VIX"] = macro["VIX"]
-    df["CF_VIX3M"] = macro["VIX3M"] if "VIX3M" in macro.columns else np.nan
-    df["CF_NFCI"] = macro["Fin_Conditions"]
-    
-    # Raw Macro
-    if "10Y_Yield" in macro.columns: df["10Y_Yield"] = macro["10Y_Yield"]
-    if "2Y_Yield" in macro.columns: df["2Y_Yield"] = macro["2Y_Yield"]
-    if "HY_Spread" in macro.columns: df["HY_Spread"] = macro["HY_Spread"]
-    
-    # Pass-through Inflation Expectations for Plotting
-    if "5Y_Breakeven" in macro.columns: df["5Y_Breakeven"] = macro["5Y_Breakeven"]
-    if "10Y_Breakeven" in macro.columns: df["10Y_Breakeven"] = macro["10Y_Breakeven"]
-    if "5Y5Y_Forward" in macro.columns: df["5Y5Y_Forward"] = macro["5Y5Y_Forward"]
-    
-    # Pass-through Plumbing Rates
-    if "SOFR" in macro.columns: df["SOFR"] = macro["SOFR"]
-    if "Fed_Funds" in macro.columns: df["Fed_Funds"] = macro["Fed_Funds"]
-    
-    # Check for Credit Spread proxy from HYG/IEF if HY_Spread missing?
-    # We implicitly use HY_Spread from FRED.
-    # Let's assume HY_Spread exists or we create 'Spread_Credit' for stress calc.
-    if "HY_Spread" in df.columns:
-        df["Spread_Credit"] = df["HY_Spread"]
-    
-    if "DX-Y.NYB" in prices.columns: df["DX-Y.NYB"] = prices["DX-Y.NYB"]
-    if "^MOVE" in prices.columns: df["MOVE_Index"] = prices["^MOVE"]
-    
-    # Debug: Check for CPI_YoY availability
-    if "CPI_YoY" not in macro.columns:
-        print("   WARNING: 'CPI_YoY' missing from macro data in build_analytics!")
-        print(f"   Available columns: {macro.columns.tolist()}")
+    cols["CF_Liquidity_Valve"] = ratio("BTC-USD", "GLD")
+    cols["CF_Real_Yield"] = macro["10Y_Yield"] - macro["10Y_Breakeven"]
+    cols["CF_Breadth"] = ratio("RSP", "SPY")
+    cols["CF_VIX"] = macro["VIX"]
+    cols["CF_VIX3M"] = macro["VIX3M"] if "VIX3M" in macro.columns else pd.Series(np.nan, index=prices.index)
+    cols["CF_NFCI"] = macro["Fin_Conditions"]
 
-    # Use Pre-Calculated YoY from loader (Native Freq)
-    if "M2_YoY" in macro.columns: df["M2_YoY"] = macro["M2_YoY"]
-    if "Fed_Assets_YoY" in macro.columns: df["Fed_Assets_YoY"] = macro["Fed_Assets_YoY"]
-    if "M2_Velocity" in macro.columns: df["M2_Velocity"] = macro["M2_Velocity"]
-    if "M2_Velocity_YoY" in macro.columns: df["M2_Velocity_YoY"] = macro["M2_Velocity_YoY"]
-        
-    if "CPI_YoY" in macro.columns: df["CPI_YoY"] = macro["CPI_YoY"]
+    # Raw Macro pass-through
+    macro_passthrough = [
+        "10Y_Yield", "2Y_Yield", "HY_Spread",
+        "5Y_Breakeven", "10Y_Breakeven", "5Y5Y_Forward",
+        "SOFR", "Fed_Funds",
+        "M2_YoY", "Fed_Assets_YoY", "M2_Velocity", "M2_Velocity_YoY",
+    ]
+    for col_name in macro_passthrough:
+        if col_name in macro.columns:
+            cols[col_name] = macro[col_name]
+
+    # Credit Spread proxy
+    if "HY_Spread" in macro.columns:
+        cols["Spread_Credit"] = macro["HY_Spread"]
+
+    # Price pass-through
+    if "DX-Y.NYB" in prices.columns:
+        cols["DX-Y.NYB"] = prices["DX-Y.NYB"]
+    if "^MOVE" in prices.columns:
+        cols["MOVE_Index"] = prices["^MOVE"]
+
+    # CPI YoY
+    if "CPI_YoY" in macro.columns:
+        cols["CPI_YoY"] = macro["CPI_YoY"]
     elif "CPI" in macro.columns:
-         # Fallback but warn
-         df["CPI_YoY"] = macro["CPI"].pct_change(252).infer_objects(copy=False)
-    if "Unemployment" in macro.columns:
-        df["Unemployment"] = macro["Unemployment"] / 100 
+        cols["CPI_YoY"] = macro["CPI"].pct_change(252).infer_objects(copy=False)
 
-    df["CF_Consumer"] = ratio("XLY", "XLP")
+    if "Unemployment" in macro.columns:
+        cols["Unemployment"] = macro["Unemployment"] / 100
+
+    cols["CF_Consumer"] = ratio("XLY", "XLP")
     
     # PART B: Rotations
-    df["ROT_Value_Growth"] = ratio("RPV", "VONG")
-    df["ROT_HiBeta_LoVol"] = ratio("SPHB", "SPLV")
-    df["ROT_Small_Large"]  = ratio("IWM", "QQQ")
-    df["ROT_Quality_Mkt"]  = ratio("NOBL", "SPY")
-    df["ROT_Biotech_Mkt"]  = ratio("XBI", "SPY")
-    
+    cols["ROT_Value_Growth"] = ratio("RPV", "VONG")
+    cols["ROT_HiBeta_LoVol"] = ratio("SPHB", "SPLV")
+    cols["ROT_Small_Large"] = ratio("IWM", "QQQ")
+    cols["ROT_Quality_Mkt"] = ratio("NOBL", "SPY")
+    cols["ROT_Biotech_Mkt"] = ratio("XBI", "SPY")
+
     cyclicals = prices["XLI"] + prices["XLB"]
     defensives = prices["XLU"] + prices["XLP"]
-    df["ROT_Cyc_Def_Sectors"] = cyclicals / defensives
-    
+    cols["ROT_Cyc_Def_Sectors"] = cyclicals / defensives
+
     labor = (prices["MAN"] + prices["RHI"] + prices["KELYA"]) / 3
-    df["ROT_Labor_SPY"] = labor / prices["SPY"]
-    
-    df["ROT_US_World"] = ratio("SPY", "ACWX")
-    df["ROT_EM_DM"]    = ratio("EEM", "VEA")
-    df["ROT_Copper_Gold"] = ratio("CPER", "GLD")
-    df["ROT_Fin_Tech"]    = ratio("XLF", "XLK")
-    
+    cols["ROT_Labor_SPY"] = labor / prices["SPY"]
+
+    cols["ROT_US_World"] = ratio("SPY", "ACWX")
+    cols["ROT_EM_DM"] = ratio("EEM", "VEA")
+    cols["ROT_Copper_Gold"] = ratio("CPER", "GLD")
+    cols["ROT_Fin_Tech"] = ratio("XLF", "XLK")
+
     if "SPY" in prices.columns and "TLT" in prices.columns:
         spy_ret = prices["SPY"].pct_change().infer_objects(copy=False)
         tlt_ret = prices["TLT"].pct_change().infer_objects(copy=False)
-        df["ROT_SPY_TLT_Corr"] = spy_ret.rolling(60).corr(tlt_ret)
+        cols["ROT_SPY_TLT_Corr"] = spy_ret.rolling(60).corr(tlt_ret)
     else:
-        df["ROT_SPY_TLT_Corr"] = 0.0
+        cols["ROT_SPY_TLT_Corr"] = pd.Series(0.0, index=prices.index)
 
     # PART C: Rate Diffs
     if "Germany_10Y" in macro.columns:
-        df["RateDiff_US_DE"] = macro["10Y_Yield"] - macro["Germany_10Y"]
+        cols["RateDiff_US_DE"] = macro["10Y_Yield"] - macro["Germany_10Y"]
     if "Japan_10Y" in macro.columns:
-        df["RateDiff_US_JP"] = macro["10Y_Yield"] - macro["Japan_10Y"]
+        cols["RateDiff_US_JP"] = macro["10Y_Yield"] - macro["Japan_10Y"]
     if "UK_10Y" in macro.columns:
-        df["RateDiff_US_UK"] = macro["10Y_Yield"] - macro["UK_10Y"]
+        cols["RateDiff_US_UK"] = macro["10Y_Yield"] - macro["UK_10Y"]
 
     # PART D: Models
     if "Spread_10Y3M" in macro.columns:
-        df["Recession_Prob_Model"] = calculate_recession_prob(macro["Spread_10Y3M"])
-        df["Spread_10Y3M"] = macro["Spread_10Y3M"]
-        df["Recession_Prob"] = df["Recession_Prob_Model"]
+        cols["Recession_Prob_Model"] = calculate_recession_prob(macro["Spread_10Y3M"])
+        cols["Spread_10Y3M"] = macro["Spread_10Y3M"]
+        cols["Recession_Prob"] = cols["Recession_Prob_Model"]
     elif "10Y_Yield" in macro.columns and "3M_Yield" in macro.columns:
         spread_10y3m = macro["10Y_Yield"] - macro["3M_Yield"]
-        df["Recession_Prob_Model"] = calculate_recession_prob(spread_10y3m)
-        df["Spread_10Y3M"] = spread_10y3m
-        df["Recession_Prob"] = df["Recession_Prob_Model"]
-    
-    if "Recession_Prob" in macro.columns:
-        df["FRED_Recession_Prob"] = macro["Recession_Prob"]
-        if not df["FRED_Recession_Prob"].dropna().empty:
-             df["Recession_Prob"] = df["FRED_Recession_Prob"]
+        cols["Recession_Prob_Model"] = calculate_recession_prob(spread_10y3m)
+        cols["Spread_10Y3M"] = spread_10y3m
+        cols["Recession_Prob"] = cols["Recession_Prob_Model"]
 
-    # PART E: Z-Scores
+    if "Recession_Prob" in macro.columns:
+        cols["FRED_Recession_Prob"] = macro["Recession_Prob"]
+        if not macro["Recession_Prob"].dropna().empty:
+            cols["Recession_Prob"] = macro["Recession_Prob"]
+
+    # Build DataFrame in one operation to avoid fragmentation
+    df = pd.DataFrame(cols, index=prices.index)
+
+    # PART E: Z-Scores (batch computation to avoid DataFrame fragmentation)
     window = 252
+    z_score_cols = {}
     for col in df.columns:
-        if "MA200" in col: continue
+        if "MA200" in col:
+            continue
         roll_mean = df[col].rolling(window).mean()
         roll_std = df[col].rolling(window).std()
-        df[f"{col}_Z"] = (df[col] - roll_mean) / roll_std
+        z_score_cols[f"{col}_Z"] = (df[col] - roll_mean) / roll_std
+
+    if z_score_cols:
+        df = pd.concat([df, pd.DataFrame(z_score_cols, index=df.index)], axis=1)
 
     return df
 

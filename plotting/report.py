@@ -9,6 +9,9 @@ import pandas as pd
 from typing import Dict
 from matplotlib.backends.backend_pdf import PdfPages
 import analytics.quant as quant_engine
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 def get_jpm_views() -> str:
     """Returns JPM's 2026 Regional Style Views."""
@@ -594,7 +597,7 @@ def generate_pdf_report(df: pd.DataFrame, prices: pd.DataFrame, figures: Dict[st
     project_root = os.path.dirname(script_dir)
     output_path = os.path.join(project_root, "Macro_Dashboard_Report.pdf")
     
-    print(f"Generating PDF Report: {output_path}...")
+    logger.info("Generating PDF Report: %s...", output_path)
     
     with PdfPages(output_path) as pdf:
         # Page 1+: Text Commentary (Paginated)
@@ -736,4 +739,4 @@ def generate_pdf_report(df: pd.DataFrame, prices: pd.DataFrame, figures: Dict[st
             pdf.savefig(figures["backtest"])
             plt.close(figures["backtest"])
 
-    print("PDF Report Saved Successfully!")
+    logger.info("PDF Report Saved Successfully!")
