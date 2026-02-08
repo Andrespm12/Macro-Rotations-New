@@ -1,7 +1,46 @@
+# Python
 __pycache__/
-*.pyc
-.DS_Store
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
 .venv/
+venv/
 env/
+ENV/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project outputs
 *.pdf
 *.png
+debug_output.txt
+
+# Data cache (large binary files)
+data/cache/
+
+# Environment variables
+.env
+.env.local
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/

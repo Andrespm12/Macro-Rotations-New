@@ -4,18 +4,21 @@ Institutional Alpha Factors: Net Liquidity, Volatility Structure, and Tail Risk.
 import pandas as pd
 import numpy as np
 from typing import Dict
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 def calculate_net_liquidity(macro: pd.DataFrame) -> Dict:
     """
     Calculates Net Liquidity = Fed Assets - TGA - RRP.
     Normalizes all units to Trillions of USD.
     """
-    print("   Calculating Institutional Net Liquidity...")
+    logger.info("Calculating Institutional Net Liquidity...")
     res = {"series": pd.Series(dtype=float), "latest": 0.0, "z_score": 0.0, "status": "N/A"}
     
     # Check availability
     if not all(col in macro.columns for col in ["Fed_Assets", "TGA", "RRP"]):
-        print("   -> Missing components (Fed_Assets, TGA, or RRP). Skipping.")
+        logger.warning("Missing components (Fed_Assets, TGA, or RRP). Skipping.")
         return res
         
     trends = pd.DataFrame(index=macro.index)
@@ -67,7 +70,7 @@ def calculate_vol_term_structure(prices: pd.DataFrame) -> Dict:
     Analyzes VIX Term Structure (VIX / VIX3M).
     > 1.0 = Backwardation (Crash Signal).
     """
-    print("   Calculating Volatility Term Structure...")
+    logger.info("Calculating Volatility Term Structure...")
     res = {"ratio": pd.Series(dtype=float), "latest": 0.0, "signal": "N/A"}
     
     if "^VIX" in prices.columns and "^VIX3M" in prices.columns:
@@ -83,7 +86,7 @@ def calculate_vol_term_structure(prices: pd.DataFrame) -> Dict:
         
         res = {"ratio": ratio, "latest": latest, "signal": signal}
     else:
-        print("   -> Missing VIX or VIX3M data.")
+        logger.warning("Missing VIX or VIX3M data.")
         
     return res
 
@@ -93,7 +96,7 @@ def calculate_tail_risk(prices: pd.DataFrame) -> Dict:
     > 135 = High Demand for Crash Protection (Bearish Divergence).
     < 115 = Complacency.
     """
-    print("   Calculating Tail Risk (SKEW)...")
+    logger.info("Calculating Tail Risk (SKEW)...")
     res = {"series": pd.Series(dtype=float), "latest": 0.0, "signal": "N/A"}
     
     if "^SKEW" in prices.columns:
@@ -106,6 +109,6 @@ def calculate_tail_risk(prices: pd.DataFrame) -> Dict:
         
         res = {"series": skew, "latest": latest, "signal": signal}
     else:
-        print("   -> Missing ^SKEW data.")
+        logger.warning("Missing ^SKEW data.")
         
     return res

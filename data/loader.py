@@ -7,6 +7,9 @@ import os
 import yfinance as yf
 import pandas as pd
 from typing import Dict, Tuple, Optional
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 try:
     from pandas_datareader import data as pdr
@@ -15,44 +18,66 @@ except ImportError:
 
 CACHE_DIR = "data/cache"
 
+def _find_latest_cache() -> tuple:
+    """Find the most recent valid cache files (non-empty prices)."""
+    if not os.path.exists(CACHE_DIR):
+        return None, None
+    import glob
+    price_files = sorted(glob.glob(f"{CACHE_DIR}/prices_*.pkl"), reverse=True)
+    for pf in price_files:
+        date_str = pf.replace(f"{CACHE_DIR}/prices_", "").replace(".pkl", "")
+        mf = f"{CACHE_DIR}/macro_{date_str}.pkl"
+        if os.path.exists(mf) and os.path.getsize(pf) > 10000:
+            return pf, mf
+    return None, None
+
+
 def download_data(config: Dict, use_cache: bool = True) -> Tuple[pd.DataFrame, pd.DataFrame, Dict]:
     """Downloads Price (YF) and Macro (FRED) data with caching."""
-    
+
     # Setup Cache
     if not os.path.exists(CACHE_DIR):
         os.makedirs(CACHE_DIR)
-        
+
     end = config["end_date"] if config["end_date"] else dt.date.today()
     start = config["start_date"]
     current_date_str = dt.date.today().strftime("%Y-%m-%d")
-    
+
     # Cache File Names (Versioned by date to ensure freshness)
     prices_file = f"{CACHE_DIR}/prices_{current_date_str}.pkl"
     macro_file = f"{CACHE_DIR}/macro_{current_date_str}.pkl"
-    
+
     prices = pd.DataFrame()
     macro = pd.DataFrame()
-    
-    # Try Loading from Cache
-    if use_cache and os.path.exists(prices_file) and os.path.exists(macro_file):
-        print("   Loading data from local cache...")
-        prices = pd.read_pickle(prices_file)
-        macro = pd.read_pickle(macro_file)
-        
-        # Still fetch fundamentals (Snapshot)
-        fundamentals = {}
-        try:
-            spy_ticker = yf.Ticker("SPY")
-            info = spy_ticker.info
-            fundamentals["SPY_PE"] = info.get("trailingPE", None)
-            print(f"   SPY Trailing PE: {fundamentals['SPY_PE']} (Live)")
-        except Exception:
-            pass
-            
-        return prices, macro, fundamentals
+
+    # Try Loading from Cache (today's date first, then fallback to latest valid)
+    if use_cache:
+        if os.path.exists(prices_file) and os.path.exists(macro_file) and os.path.getsize(prices_file) > 10000:
+            logger.info("Loading data from local cache...")
+            prices = pd.read_pickle(prices_file)
+            macro = pd.read_pickle(macro_file)
+        else:
+            # Fallback: find most recent valid cache
+            fallback_prices, fallback_macro = _find_latest_cache()
+            if fallback_prices:
+                logger.info(f"Today's cache unavailable, loading from: {os.path.basename(fallback_prices)}")
+                prices = pd.read_pickle(fallback_prices)
+                macro = pd.read_pickle(fallback_macro)
+
+        if not prices.empty:
+            fundamentals = {}
+            try:
+                spy_ticker = yf.Ticker("SPY")
+                info = spy_ticker.info
+                fundamentals["SPY_PE"] = info.get("trailingPE", None)
+                logger.info(f"SPY Trailing PE: {fundamentals['SPY_PE']} (Live)")
+            except Exception:
+                fundamentals["SPY_PE"] = 22.0  # Reasonable fallback
+                logger.info("Using fallback SPY PE ratio")
+            return prices, macro, fundamentals
     
     # --- 1. Fetching Asset Prices (Yahoo Finance) ---
-    print("1. Fetching Asset Prices (Yahoo Finance)...")
+    logger.info("Fetching Asset Prices (Yahoo Finance)...")
     tickers = list(set(config["tickers"])) # Dedupe
     
     try:
@@ -64,10 +89,10 @@ def download_data(config: Dict, use_cache: bool = True) -> Tuple[pd.DataFrame, p
             prices = prices.to_frame()
             
     except Exception as e:
-        print(f"YF Download Error: {e}")
+        logger.error(f"YF Download Error: {e}")
         
     # --- 2. Fetching Macro Plumbing (FRED) ---
-    print("2. Fetching Macro Plumbing (FRED)...")
+    logger.info("Fetching Macro Plumbing (FRED)...")
     try:
         fred_map = config["fred_codes"]
         # PDR FRED reader
@@ -96,7 +121,7 @@ def download_data(config: Dict, use_cache: bool = True) -> Tuple[pd.DataFrame, p
              vel_series = macro["M2_Velocity"].dropna()
              macro["M2_Velocity_YoY"] = vel_series.pct_change(4)
     except Exception as e:
-        print(f"FRED Download Error: {e}")
+        logger.error(f"FRED Download Error: {e}")
         macro = pd.DataFrame()
 
     # --- 3. Post-Processing ---
@@ -105,19 +130,19 @@ def download_data(config: Dict, use_cache: bool = True) -> Tuple[pd.DataFrame, p
     macro = macro.ffill().reindex(prices.index).ffill()
     
     # --- 4. Fetch Fundamentals (Snapshot) ---
-    print("4. Fetching Fundamentals (Snapshot)...")
+    logger.info("Fetching Fundamentals (Snapshot)...")
     fundamentals = {}
     try:
         spy_ticker = yf.Ticker("SPY")
         info = spy_ticker.info
         fundamentals["SPY_PE"] = info.get("trailingPE", None)
-        print(f"   SPY Trailing PE: {fundamentals['SPY_PE']}")
+        logger.info(f"SPY Trailing PE: {fundamentals['SPY_PE']}")
     except Exception as e:
-        print(f"   Fundamentals Error: {e}")
+        logger.error(f"Fundamentals Error: {e}")
     
     # Save to Cache
     if use_cache:
-        print(f"   Saving data to cache ({CACHE_DIR})...")
+        logger.info(f"Saving data to cache ({CACHE_DIR})...")
         prices.to_pickle(prices_file)
         macro.to_pickle(macro_file)
         # Note: We are not caching fundamentals to keep them fresh

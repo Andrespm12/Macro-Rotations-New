@@ -14,14 +14,17 @@ from analytics.quant import calculate_strategy_performance, calculate_systemic_r
 from analytics.stochastic import simulate_heston, simulate_merton_jump, simulate_hawkes_intensity
 from analytics.econometrics import fit_markov_regime_switching, fit_ou_process
 from analytics.scenarios import calculate_move_probabilities, generate_contingencies
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 def run_backtest_plot(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
     """Runs a vectorised backtest for multiple strategies and plots the results."""
-    print("   Running Backtest & Projections...")
+    logger.info("Running Backtest & Projections...")
     
     metrics, curves = calculate_strategy_performance(df, prices)
     if curves is None or curves.empty:
-        print("   Backtest failed: Missing assets.")
+        logger.warning("Backtest failed: Missing assets.")
         return None
         
     # Simplified Projection: Monte Carlo using Full History
@@ -119,7 +122,7 @@ def run_backtest_plot(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
 
 def plot_risk_macro_dashboard(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
     """Generates Page 3: Macro Risk & Sector Rotation."""
-    print("   Generating Risk & Macro Page...")
+    logger.info("Generating Risk & Macro Page...")
     plt.style.use('default')
     
     fig = plt.figure(figsize=(14, 14))
@@ -231,7 +234,7 @@ def plot_risk_macro_dashboard(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Fig
 
 def plot_macro_radar_chart(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
     """Generates the Macro Regime Radar (Spider Chart)."""
-    print("   Generating Macro Radar...")
+    logger.info("Generating Macro Radar...")
     plt.style.use('default')
     
     radar_data = calculate_macro_radar(df, prices)
@@ -273,7 +276,7 @@ def plot_macro_radar_chart(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure
 
 def plot_monetary_plumbing(df: pd.DataFrame) -> plt.Figure:
     """Generates Page 4: Monetary & Economic Plumbing."""
-    print("   Generating Monetary Plumbing Page...")
+    logger.info("Generating Monetary Plumbing Page...")
     plt.style.use('default')
     
     fig = plt.figure(figsize=(14, 18))
@@ -396,7 +399,7 @@ def plot_monetary_plumbing(df: pd.DataFrame) -> plt.Figure:
 
 def plot_forward_models(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
     """Generates Page: Forward Looking Models (Recession, Regime, Rotation, PCA, Seasonality)."""
-    print("   Generating Forward Models Page...")
+    logger.info("Generating Forward Models Page...")
     plt.style.use('default')
     
     fig = plt.figure(figsize=(14, 18)) 
@@ -561,7 +564,7 @@ def plot_forward_models(df: pd.DataFrame, prices: pd.DataFrame) -> plt.Figure:
 
 def plot_quant_lab_dashboard(prices: pd.DataFrame) -> plt.Figure:
     """Generates Page: Quant Lab (Vol, Monte Carlo, Greeks)."""
-    print("   Generating Quant Lab Page...")
+    logger.info("Generating Quant Lab Page...")
     plt.style.use('default')
     
     fig = plt.figure(figsize=(14, 10))
@@ -677,7 +680,7 @@ def plot_quant_lab_dashboard(prices: pd.DataFrame) -> plt.Figure:
 
 def plot_alpha_factors_page(prices: pd.DataFrame, macro: pd.DataFrame, alpha_data: Dict) -> plt.Figure:
     """Generates Page 6: Institutional Alpha Factors."""
-    print("   Generating Alpha Factors Page...")
+    logger.info("Generating Alpha Factors Page...")
     plt.style.use('default')
     
     fig = plt.figure(figsize=(14, 16)) # Increased height
@@ -791,7 +794,7 @@ def plot_alpha_factors_page(prices: pd.DataFrame, macro: pd.DataFrame, alpha_dat
 
 def plot_cross_asset_page(prices: pd.DataFrame, corr_data: Dict) -> plt.Figure:
     """Generates Page 9: Cross-Asset Regime."""
-    print("   Generating Cross-Asset Correlation Page...")
+    logger.info("Generating Cross-Asset Correlation Page...")
     plt.style.use('default')
     
     fig = plt.figure(figsize=(14, 16)) # Increased height 
@@ -871,7 +874,7 @@ def plot_cross_asset_page(prices: pd.DataFrame, corr_data: Dict) -> plt.Figure:
 
 def plot_efficient_frontier_page(optimization_data: Dict) -> plt.Figure:
     """Generates Page 10: Portfolio Optimization Lab."""
-    print("   Generating Efficient Frontier Page...")
+    logger.info("Generating Efficient Frontier Page...")
     plt.style.use('default')
     
     if not optimization_data or "results" not in optimization_data:
@@ -956,7 +959,7 @@ def plot_efficient_frontier_page(optimization_data: Dict) -> plt.Figure:
 
 def plot_predictive_models_page(df: pd.DataFrame, internals: Dict, recession_prob: pd.Series) -> plt.Figure:
     """Page 11: Predictive Analytics (Recession & Internals)."""
-    print("   Generating Predictive Models Page...")
+    logger.info("Generating Predictive Models Page...")
     fig = plt.figure(figsize=(11, 8.5))
     fig.suptitle("PREDICTIVE ANALYTICS: MACRO & MARKET INTERNALS", fontsize=16, weight='bold', y=0.98)
     
@@ -1047,7 +1050,7 @@ def plot_predictive_models_page(df: pd.DataFrame, internals: Dict, recession_pro
 
 def plot_monte_carlo_cone(prices: pd.DataFrame, ticker: str = "SPY", days: int = 60, n_sims: int = 1000) -> plt.Figure:
     """Page 12: Quant Lab Simulation (Brownian Motion Cone)."""
-    print(f"   Generating Monte Carlo Cone for {ticker}...")
+    logger.info("Generating Monte Carlo Cone for %s...", ticker)
     
     if ticker not in prices.columns: return None
     
@@ -1160,7 +1163,7 @@ def plot_monte_carlo_cone(prices: pd.DataFrame, ticker: str = "SPY", days: int =
 
 def plot_stochastic_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Figure:
     """Page 13: Stochastic Volatility & Regime Switching."""
-    print(f"   Generating Stochastic Models Page for {ticker}...")
+    logger.info("Generating Stochastic Models Page for %s...", ticker)
     
     if ticker not in prices.columns: return None
     series = prices[ticker].dropna()
@@ -1253,7 +1256,7 @@ def plot_stochastic_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Figur
 
 def plot_mean_reversion_page(prices: pd.DataFrame) -> plt.Figure:
     """Page 14: Mean Reversion (Ornstein-Uhlenbeck)."""
-    print("   Generating Mean Reversion Page...")
+    logger.info("Generating Mean Reversion Page...")
     
     fig = plt.figure(figsize=(11, 8.5))
     fig.suptitle("QUANT LAB: MEAN REVERSION (OU PROCESS)", fontsize=16, weight='bold', y=0.98)
@@ -1355,7 +1358,7 @@ def plot_mean_reversion_page(prices: pd.DataFrame) -> plt.Figure:
 
 def plot_microstructure_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Figure:
     """Page 15: Jump Diffusion & Hawkes Microstructure."""
-    print("   Generating Microstructure & Jumps Page...")
+    logger.info("Generating Microstructure & Jumps Page...")
     
     if ticker not in prices.columns: return None
     
@@ -1441,7 +1444,7 @@ def plot_microstructure_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.F
 
 def plot_antifragility_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Figure:
     """Page 16: Taleb Anti-Fragility & Tail Risk."""
-    print("   Generating Anti-Fragility Analysis Page...")
+    logger.info("Generating Anti-Fragility Analysis Page...")
     
     if ticker not in prices.columns: return None
     
@@ -1519,7 +1522,7 @@ def plot_antifragility_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Fi
 
 def plot_scenario_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Figure:
     """Page 17: Scenario Analysis & Contingency Planning."""
-    print("   Generating Scenario Analysis Page...")
+    logger.info("Generating Scenario Analysis Page...")
     
     if ticker not in prices.columns: return None
     
@@ -1654,7 +1657,7 @@ def plot_scenario_page(prices: pd.DataFrame, ticker: str = "SPY") -> plt.Figure:
 
 def plot_valuation_page(df: pd.DataFrame, fundamentals: Dict) -> plt.Figure:
     """Generates Page: Valuation & Real Rates (Real Yields & ERP)."""
-    print("   Generating Valuation & Real Rates Page...")
+    logger.info("Generating Valuation & Real Rates Page...")
     plt.style.use('default')
     
     fig = plt.figure(figsize=(14, 12))
@@ -1751,7 +1754,7 @@ def plot_valuation_page(df: pd.DataFrame, fundamentals: Dict) -> plt.Figure:
 
 def plot_inflation_swap_curve(df: pd.DataFrame) -> plt.Figure:
     """Generates Page: Inflation Expectations Term Structure (Swaps Proxy)."""
-    print("   Generating Inflation Expectations Page...")
+    logger.info("Generating Inflation Expectations Page...")
     plt.style.use('default')
     
     fig = plt.figure(figsize=(14, 12))
@@ -1872,7 +1875,7 @@ def plot_inflation_swap_curve(df: pd.DataFrame) -> plt.Figure:
 
 def plot_global_macro_fx_page(df: pd.DataFrame, prices: pd.DataFrame, macro: pd.DataFrame, global_flows: Dict) -> plt.Figure:
     """Generates Page: Global Macro, FX & Capital Flows."""
-    print("   Generating Global FX & Rates Page...")
+    logger.info("Generating Global FX & Rates Page...")
     plt.style.use('default')
     
     fig = plt.figure(figsize=(14, 16))

@@ -76,5 +76,17 @@ CONFIG: Dict = {
     # --- SETTINGS ---
     "ma_short": 50,
     "ma_long": 200,
-    "regime_threshold": 1.0, # % threshold for Macro Score
+    "regime_threshold": 1.0,  # % threshold for Macro Score
+
+    # --- SIMULATION DEFAULTS ---
+    "default_ticker": "SPY",
+    "monte_carlo_sims": 1000,
+    "monte_carlo_days": 63,        # ~3 months of trading days
+    "risk_free_rate": 0.045,
+    "optimization_portfolios": 5000,
+
+    # --- PORTFOLIO BASKETS ---
+    "optimization_basket": ["SPY", "TLT", "GLD", "UUP", "BTC-USD"],
+    "pca_basket": ["SPY", "TLT", "GLD", "UUP", "XLE"],
+    "cta_basket": ["SPY", "QQQ", "IWM", "EEM", "TLT", "GLD", "UUP", "BTC-USD", "GSG"],
 }

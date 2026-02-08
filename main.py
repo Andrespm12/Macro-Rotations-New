@@ -3,11 +3,13 @@ Main entry point for the Macro Rotations Dashboard.
 Orchestrates Config -> Data -> Analytics -> Plotting -> Report.
 """
 import sys
-# Make sure we can import local modules
 sys.path.append(".")
 import pandas as pd
 
 from core.config import CONFIG
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 from data.loader import download_data
 from analytics.macro_models import build_analytics, add_trends_and_score, calculate_global_flows
 from analytics.alpha_models import calculate_net_liquidity, calculate_vol_term_structure, calculate_tail_risk
@@ -24,18 +26,18 @@ from plotting.charts import (
 from plotting.report import generate_pdf_report
 
 def main():
-    print("--- Initializing SUPER MACRO DASHBOARD (Modular) ---")
+    logger.info("Initializing Macro Rotations Dashboard")
     
     # 1. Data Ingestion
     prices, macro, fundamentals = download_data(CONFIG, use_cache=True)
     
     # 2. Analytics Pipeline
-    print("Running Analytics Pipeline...")
+    logger.info("Running Analytics Pipeline...")
     df = build_analytics(prices, macro, CONFIG)
     df = add_trends_and_score(df, CONFIG)
     
     # 2b. Alpha Models
-    print("Running Alpha Models...")
+    logger.info("Running Alpha Models...")
     alpha_data = {
         "net_liquidity": calculate_net_liquidity(macro),
         "vol_structure": calculate_vol_term_structure(prices),
@@ -43,26 +45,30 @@ def main():
     }
     
     # 2c. Cross-Asset & CTA
-    print("Running Cross-Asset & CTA Models...")
+    logger.info("Running Cross-Asset & CTA Models...")
     corr_data = calculate_cross_asset_correlations(prices)
     cta_data = calculate_cta_momentum(prices)
     
     # 2d. Global FX Flows
     global_flows = calculate_global_flows(prices, macro)
     
-    # 2d. Portfolio Optimization (Phase 7: Macro-Adjusted)
-    print("Running Portfolio Optimization (Macro-Adjusted)...")
+    # 2d. Portfolio Optimization (Macro-Adjusted)
+    logger.info("Running Portfolio Optimization (Macro-Adjusted)...")
     last_score = df["MACRO_SCORE"].iloc[-1]
     last_cpi = macro["CPI"].pct_change(12).iloc[-1]
-    
+
     fwd_rets = calculate_forward_returns(prices, last_score, last_cpi)
-    opt_data = optimize_portfolio(prices, expected_returns=fwd_rets)
+    opt_data = optimize_portfolio(
+        prices,
+        risk_free_rate=CONFIG.get("risk_free_rate", 0.045),
+        expected_returns=fwd_rets,
+    )
     
     # Add Score to Opt Data for Report
     opt_data["macro_score"] = last_score
     
     # 2e. Predictive Analytics (Phase 8)
-    print("Running Predictive Analytics...")
+    logger.info("Running Predictive Analytics...")
     internals = calculate_market_internals(prices)
     pred_data = {
         "internals": internals,
@@ -70,7 +76,7 @@ def main():
     }
     
     # 3. Visualization Pipeline
-    print("Generating Visualizations...")
+    logger.info("Generating Visualizations...")
     figures = {}
     
     # Backtest
@@ -117,29 +123,34 @@ def main():
     fig_pred = plot_predictive_models_page(df, internals, df.get("Recession_Prob", pd.Series(dtype=float)))
     figures["predictive"] = fig_pred
     
-    # Monte Carlo Quant Lab (Phase 9)
-    fig_gbm = plot_monte_carlo_cone(prices, ticker="SPY", days=63, n_sims=1000)
+    # Monte Carlo Quant Lab
+    default_ticker = CONFIG.get("default_ticker", "SPY")
+    fig_gbm = plot_monte_carlo_cone(
+        prices,
+        ticker=default_ticker,
+        days=CONFIG.get("monte_carlo_days", 63),
+        n_sims=CONFIG.get("monte_carlo_sims", 1000),
+    )
     figures["monte_carlo"] = fig_gbm
-    
-    # Stochastic & Regimes (Phase 10)
-    fig_stoch = plot_stochastic_page(prices, ticker="SPY")
+
+    # Stochastic & Regimes
+    fig_stoch = plot_stochastic_page(prices, ticker=default_ticker)
     figures["stochastic"] = fig_stoch
-    
-    # Mean Reversion (Phase 11)
+
+    # Mean Reversion
     fig_ou = plot_mean_reversion_page(prices)
     figures["mean_reversion"] = fig_ou
-    
-    # Jumps & Microstructure (Phase 12)
-    fig_micro = plot_microstructure_page(prices, ticker="SPY")
+
+    # Jumps & Microstructure
+    fig_micro = plot_microstructure_page(prices, ticker=default_ticker)
     figures["microstructure"] = fig_micro
-    
-    # Anti-Fragility (Phase 13)
-    fig_anti = plot_antifragility_page(prices, ticker="SPY")
+
+    # Anti-Fragility
+    fig_anti = plot_antifragility_page(prices, ticker=default_ticker)
     figures["antifragility"] = fig_anti
-    
-    # Scenario Analysis (Phase 14)
-    # Scenario Analysis (Phase 14)
-    fig_scen = plot_scenario_page(prices, ticker="SPY")
+
+    # Scenario Analysis
+    fig_scen = plot_scenario_page(prices, ticker=default_ticker)
     figures["scenarios"] = fig_scen
     
     # Valuation & Real Rates (New)
@@ -153,7 +164,7 @@ def main():
     # 4. Reporting
     generate_pdf_report(df, prices, figures, alpha_data, cta_data, opt_data, pred_data)
     
-    print("Done!")
+    logger.info("Dashboard generation complete.")
 
 if __name__ == "__main__":
     main()

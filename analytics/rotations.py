@@ -5,6 +5,9 @@ import pandas as pd
 import datetime as dt
 import calendar
 from typing import Dict
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 def calculate_rrg_metrics(prices: pd.DataFrame) -> pd.DataFrame:
     """
@@ -55,7 +58,7 @@ def predict_sector_rotation(prices: pd.DataFrame) -> Dict:
     """
     Predicts next likely Sector Leader using a Transition Matrix.
     """
-    print("   Calculating Sector Rotation Probabilities...")
+    logger.info("Calculating Sector Rotation Probabilities...")
     sectors = ["XLI", "XLB", "XLU", "XLF", "XLK", "XLE", "XLV", "XLC", "XLY", "XLP"]
     res = {"current_leader": "N/A", "next_likely": "N/A", "prob": 0.0}
     
@@ -118,7 +121,7 @@ def calculate_seasonality(prices: pd.DataFrame) -> Dict:
     """
     Calculates Seasonality Stats for Current and Next Month (SPY).
     """
-    print("   Calculating Seasonality...")
+    logger.info("Calculating Seasonality...")
     res = {"curr_month": "N/A", "curr_stats": "", "next_month": "N/A", "next_stats": ""}
     
     if "SPY" not in prices.columns: return res
